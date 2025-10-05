@@ -46,8 +46,33 @@ func renderServerConfig(config Configuration) (string, error) {
 	privateKey := base64.StdEncoding.EncodeToString(config.Server.KeySet.PrivateKey)
 	sb.WriteString(fmt.Sprintf("PrivateKey = %s\n\n", privateKey))
 
-	sb.WriteString(fmt.Sprintf("PostUp = iptables -A FORWARD -i %%i -j ACCEPT; iptables -t nat -A POSTROUTING -o %s -j MASQUERADE\n", config.Server.Interface))
-	sb.WriteString(fmt.Sprintf("PostDown = iptables -D FORWARD -i %%i -j ACCEPT; iptables -t nat -D POSTROUTING -o %s -j MASQUERADE\n", config.Server.Interface))
+	// Build PostUp and PostDown rules for each client's allowed IPs
+	var iptablesRules []string
+	var postDownRules []string
+
+	// Add MASQUERADE rule
+	iptablesRules = append(iptablesRules, fmt.Sprintf("iptables -t nat -A POSTROUTING -o %s -j MASQUERADE", config.Server.Interface))
+	postDownRules = append(postDownRules, fmt.Sprintf("iptables -t nat -D POSTROUTING -o %s -j MASQUERADE", config.Server.Interface))
+
+	// Add specific forwarding rules for each client's allowed IPs
+	for _, client := range config.Clients {
+		for _, allowedIP := range client.AllowedIPs {
+			iptablesRules = append(iptablesRules, fmt.Sprintf("iptables -A FORWARD -i %%i -s %s -d %s -j ACCEPT", client.Address, allowedIP))
+			iptablesRules = append(iptablesRules, fmt.Sprintf("iptables -A FORWARD -i %s -s %s -d %s -j ACCEPT", config.Server.Interface, allowedIP, client.Address))
+			postDownRules = append(postDownRules, fmt.Sprintf("iptables -D FORWARD -i %%i -s %s -d %s -j ACCEPT", client.Address, allowedIP))
+			postDownRules = append(postDownRules, fmt.Sprintf("iptables -D FORWARD -i %s -s %s -d %s -j ACCEPT", config.Server.Interface, allowedIP, client.Address))
+		}
+	}
+
+	// Write PostUp rules
+	for _, rule := range iptablesRules {
+		sb.WriteString(fmt.Sprintf("PostUp = %s\n", rule))
+	}
+
+	// Write PostDown rules
+	for _, rule := range postDownRules {
+		sb.WriteString(fmt.Sprintf("PostDown = %s\n", rule))
+	}
 
 	for _, client := range config.Clients {
 		sb.WriteString("\n[Peer]\n")
