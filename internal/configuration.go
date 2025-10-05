@@ -13,11 +13,12 @@ type Configuration struct {
 }
 
 type Server struct {
-	Name       string `json:"name"`
-	PublicIP   string `json:"publicIp"`
-	Address    string `json:"address"`
-	ListenPort uint16 `json:"listenPort"`
-	Interface  string `json:"interface"`
+	Name       string   `json:"name"`
+	PublicIP   string   `json:"publicIp"`
+	Address    string   `json:"address"`
+	ListenPort uint16   `json:"listenPort"`
+	Interface  string   `json:"interface"`
+	DNS        []string `json:"dns"`
 }
 
 type Client struct {

@@ -44,7 +44,10 @@ func renderServerConfig(config Configuration) (string, error) {
 	sb.WriteString(fmt.Sprintf("ListenPort = %d\n", config.Server.ListenPort))
 
 	privateKey := base64.StdEncoding.EncodeToString(config.Server.KeySet.PrivateKey)
-	sb.WriteString(fmt.Sprintf("PrivateKey = %s\n", privateKey))
+	sb.WriteString(fmt.Sprintf("PrivateKey = %s\n\n", privateKey))
+
+	sb.WriteString(fmt.Sprintf("PostUp = iptables -A FORWARD -i %%i -j ACCEPT; iptables -t nat -A POSTROUTING -o %s -j MASQUERADE\n", config.Server.Interface))
+	sb.WriteString(fmt.Sprintf("PostDown = iptables -D FORWARD -i %%i -j ACCEPT; iptables -t nat -D POSTROUTING -o %s -j MASQUERADE\n", config.Server.Interface))
 
 	for _, client := range config.Clients {
 		sb.WriteString("\n[Peer]\n")
@@ -70,6 +73,8 @@ func renderClientConfig(server ServerConfiguration, client ClientConfiguration) 
 
 	privateKey := base64.StdEncoding.EncodeToString(client.KeySet.PrivateKey)
 	sb.WriteString(fmt.Sprintf("PrivateKey = %s\n", privateKey))
+
+	sb.WriteString(fmt.Sprintf("DNS = %s\n", strings.Join(server.DNS, ", ")))
 
 	// Server peer section
 	sb.WriteString("\n[Peer]\n")

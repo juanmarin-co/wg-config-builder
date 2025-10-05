@@ -32,6 +32,8 @@ func main() {
 		Address:    configuration.Server.Address,
 		ListenPort: configuration.Server.ListenPort,
 		KeySet:     serverKeySet,
+		Interface:  configuration.Server.Interface,
+		DNS:        configuration.Server.DNS,
 	}
 
 	var clientConfigs []wireguard.ClientConfiguration
