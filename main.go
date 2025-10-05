@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,13 +11,17 @@ import (
 )
 
 func main() {
-	configuration, err := internal.LoadConfiguration("config.json")
+	configPath := flag.String("config", "config.json", "Path to the configuration file")
+	keystorePath := flag.String("keystore", "keystore.json", "Path to the keystore file")
+	flag.Parse()
+
+	configuration, err := internal.LoadConfiguration(*configPath)
 	if err != nil {
 		fmt.Printf("Error loading configuration: %v\n", err)
 		return
 	}
 
-	keyStore := internal.NewKeyStore("keystore.json")
+	keyStore := internal.NewKeyStore(*keystorePath)
 
 	serverKeySet, err := keyStore.Load(configuration.Seed, fmt.Sprintf("server-%s", configuration.Server.Name))
 	if err != nil {
@@ -24,9 +29,6 @@ func main() {
 		return
 	}
 
-	fmt.Printf("Server %s keyset: %+v\n", configuration.Server.Name, serverKeySet)
-
-	// Build server configuration
 	serverConfig := wireguard.ServerConfiguration{
 		PublicIP:   configuration.Server.PublicIP,
 		Address:    configuration.Server.Address,
@@ -57,16 +59,10 @@ func main() {
 		}
 		clientConfigs = append(clientConfigs, clientConfig)
 	}
-
-	// Build wireguard configuration
 	wgConfig := wireguard.Configuration{
 		Server:  serverConfig,
 		Clients: clientConfigs,
 	}
-
-	fmt.Printf("WireGuard Configuration:\n")
-	fmt.Printf("Server: %+v\n", wgConfig.Server)
-	fmt.Printf("Clients: %+v\n", wgConfig.Clients)
 
 	rendered, err := wireguard.Render(wgConfig)
 	if err != nil {
@@ -74,7 +70,6 @@ func main() {
 		return
 	}
 
-	// Create output directory
 	outputDir := filepath.Join("generated", configuration.Seed)
 	err = os.MkdirAll(outputDir, 0755)
 	if err != nil {
@@ -82,7 +77,6 @@ func main() {
 		return
 	}
 
-	// Write server configuration
 	serverConfigPath := filepath.Join(outputDir, "wg0.conf")
 	err = os.WriteFile(serverConfigPath, []byte(rendered.ServerConfig), 0600)
 	if err != nil {
@@ -91,7 +85,6 @@ func main() {
 	}
 	fmt.Printf("Server configuration written to: %s\n", serverConfigPath)
 
-	// Write client configurations
 	for clientName, clientConfig := range rendered.ClientConfig {
 		clientConfigPath := filepath.Join(outputDir, fmt.Sprintf("%s.conf", clientName))
 		err = os.WriteFile(clientConfigPath, []byte(clientConfig), 0600)

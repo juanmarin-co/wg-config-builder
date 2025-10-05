@@ -2,7 +2,7 @@ package internal
 
 import (
 	"crypto/sha256"
-	"encoding/hex"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -114,5 +114,5 @@ func calculateKeyId(seed string, name string) string {
 	hash.Write([]byte(seed))
 	hash.Write([]byte(name))
 
-	return hex.EncodeToString(hash.Sum(nil))
+	return base64.StdEncoding.EncodeToString(hash.Sum(nil))
 }
