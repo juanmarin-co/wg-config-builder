@@ -1,0 +1,19 @@
+package wireguard
+
+type Configuration struct {
+	Server  ServerConfiguration
+	Clients []ClientConfiguration
+}
+
+type ServerConfiguration struct {
+	PublicIP   string
+	Address    string
+	ListenPort uint16
+	KeySet     KeySet
+}
+
+type ClientConfiguration struct {
+	Address    string
+	KeySet     KeySet
+	AllowedIPs []string
+}

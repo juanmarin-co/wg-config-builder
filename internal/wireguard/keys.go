@@ -1,4 +1,4 @@
-package internal
+package wireguard
 
 import (
 	"crypto/rand"

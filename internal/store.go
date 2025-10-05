@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/juanmarin-co/wg-config-builder/internal/wireguard"
 )
 
 type KeyStore struct {
@@ -14,7 +16,7 @@ type KeyStore struct {
 }
 
 type persistentData struct {
-	KeySets map[string]KeySet `json:"keySets"`
+	KeySets map[string]wireguard.KeySet `json:"keySets"`
 }
 
 func NewKeyStore(path string) *KeyStore {
@@ -23,26 +25,26 @@ func NewKeyStore(path string) *KeyStore {
 	}
 }
 
-func (store *KeyStore) Load(seed []byte, name string) (KeySet, error) {
+func (store *KeyStore) Load(seed string, name string) (wireguard.KeySet, error) {
 	keyId := calculateKeyId(seed, name)
 
 	data, err := store.loadFromDisk()
 	if err != nil {
-		return KeySet{}, fmt.Errorf("failed to load from disk: %w", err)
+		return wireguard.KeySet{}, fmt.Errorf("failed to load from disk: %w", err)
 	}
 
 	if keySet, exists := data.KeySets[keyId]; exists {
 		return keySet, nil
 	}
 
-	keySet, err := GenerateKeySet()
+	keySet, err := wireguard.GenerateKeySet()
 	if err != nil {
-		return KeySet{}, fmt.Errorf("failed to generate key set: %w", err)
+		return wireguard.KeySet{}, fmt.Errorf("failed to generate key set: %w", err)
 	}
 
 	data.KeySets[keyId] = keySet
 	if err := store.saveToDisk(data); err != nil {
-		return KeySet{}, fmt.Errorf("failed to save keystore: %w", err)
+		return wireguard.KeySet{}, fmt.Errorf("failed to save keystore: %w", err)
 	}
 
 	return keySet, nil
@@ -58,7 +60,7 @@ func (store *KeyStore) loadFromDisk() (persistentData, error) {
 		if os.IsNotExist(err) {
 			// File doesn't exist yet, return empty data
 			return persistentData{
-				KeySets: make(map[string]KeySet),
+				KeySets: make(map[string]wireguard.KeySet),
 			}, nil
 		}
 
@@ -71,7 +73,7 @@ func (store *KeyStore) loadFromDisk() (persistentData, error) {
 	}
 
 	if data.KeySets == nil {
-		data.KeySets = make(map[string]KeySet)
+		data.KeySets = make(map[string]wireguard.KeySet)
 	}
 
 	return data, nil
@@ -107,9 +109,9 @@ func (store *KeyStore) saveToDisk(data persistentData) error {
 	return nil
 }
 
-func calculateKeyId(seed []byte, name string) string {
+func calculateKeyId(seed string, name string) string {
 	hash := sha256.New()
-	hash.Write(seed)
+	hash.Write([]byte(seed))
 	hash.Write([]byte(name))
 
 	return hex.EncodeToString(hash.Sum(nil))
