@@ -38,7 +38,7 @@ func main() {
 		DNS:        configuration.Server.DNS,
 	}
 
-	var clientConfigs []wireguard.ClientConfiguration
+	clientConfigs := make(map[string]wireguard.ClientConfiguration)
 	for i, client := range configuration.Clients {
 		clientKeySet, err := keyStore.Load(configuration.Seed, fmt.Sprintf("client-%s", client.Name))
 		if err != nil {
@@ -57,7 +57,8 @@ func main() {
 			KeySet:     clientKeySet,
 			AllowedIPs: client.AllowedIps,
 		}
-		clientConfigs = append(clientConfigs, clientConfig)
+
+		clientConfigs[client.Name] = clientConfig
 	}
 	wgConfig := wireguard.Configuration{
 		Server:  serverConfig,
@@ -77,7 +78,7 @@ func main() {
 		return
 	}
 
-	serverConfigPath := filepath.Join(outputDir, "wg0.conf")
+	serverConfigPath := filepath.Join(outputDir, "server.conf")
 	err = os.WriteFile(serverConfigPath, []byte(rendered.ServerConfig), 0600)
 	if err != nil {
 		fmt.Printf("Error writing server config: %v\n", err)
@@ -86,7 +87,7 @@ func main() {
 	fmt.Printf("Server configuration written to: %s\n", serverConfigPath)
 
 	for clientName, clientConfig := range rendered.ClientConfig {
-		clientConfigPath := filepath.Join(outputDir, fmt.Sprintf("%s.conf", clientName))
+		clientConfigPath := filepath.Join(outputDir, fmt.Sprintf("client-%s.conf", clientName))
 		err = os.WriteFile(clientConfigPath, []byte(clientConfig), 0600)
 		if err != nil {
 			fmt.Printf("Error writing client config %s: %v\n", clientName, err)

@@ -24,12 +24,12 @@ func Render(configuration Configuration) (RenderResult, error) {
 	result.ServerConfig = serverConfig
 
 	// Render client configurations
-	for i, client := range configuration.Clients {
-		clientName := fmt.Sprintf("client%d", i+1)
+	for clientName, client := range configuration.Clients {
 		clientConfig, err := renderClientConfig(configuration.Server, client)
 		if err != nil {
 			return result, fmt.Errorf("failed to render client %s config: %w", clientName, err)
 		}
+
 		result.ClientConfig[clientName] = clientConfig
 	}
 

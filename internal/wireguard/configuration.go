@@ -2,7 +2,7 @@ package wireguard
 
 type Configuration struct {
 	Server  ServerConfiguration
-	Clients []ClientConfiguration
+	Clients map[string]ClientConfiguration
 }
 
 type ServerConfiguration struct {
