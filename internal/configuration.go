@@ -8,7 +8,7 @@ import (
 
 type Configuration struct {
 	Seed    string   `json:"seed"`
-	Server  Server   `json:"server"`
+	Servers []Server `json:"servers"`
 	Clients []Client `json:"clients"`
 }
 
@@ -24,6 +24,7 @@ type Server struct {
 type Client struct {
 	Name       string   `json:"name"`
 	AllowedIps []string `json:"allowedIps"`
+	Servers    []string `json:"servers"`
 }
 
 func LoadConfiguration(path string) (Configuration, error) {

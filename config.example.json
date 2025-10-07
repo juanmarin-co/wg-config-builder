@@ -1,21 +1,33 @@
 {
   "seed": "example",
-  "server": {
-    "name": "bastion",
-    "publicIp": "142.251.35.238",
-    "address": "172.24.0.1/16",
-    "listenPort": 51820,
-    "interface": "ens4",
-    "dns": ["1.1.1.1", "1.0.0.1"]
-  },
+  "servers": [
+    {
+      "name": "bastion",
+      "publicIp": "142.251.35.238",
+      "address": "172.24.0.1/16",
+      "listenPort": 51820,
+      "interface": "ens4",
+      "dns": ["1.1.1.1", "1.0.0.1"]
+    },
+    {
+      "name": "backup",
+      "publicIp": "142.251.35.239",
+      "address": "172.25.0.1/16",
+      "listenPort": 51821,
+      "interface": "ens5",
+      "dns": ["8.8.8.8", "8.8.4.4"]
+    }
+  ],
   "clients": [
     {
       "name": "simple",
-      "allowedIps": ["10.158.144.3/32"]
+      "allowedIps": ["10.158.144.3/32"],
+      "servers": ["bastion"]
     },
     {
       "name": "all",
-      "allowedIps": ["0.0.0.0/0"]
+      "allowedIps": ["0.0.0.0/0"],
+      "servers": ["bastion", "backup"]
     }
   ]
 }
