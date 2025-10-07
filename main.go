@@ -23,78 +23,101 @@ func main() {
 
 	keyStore := internal.NewKeyStore(*keystorePath)
 
-	serverKeySet, err := keyStore.Load(configuration.Seed, fmt.Sprintf("server-%s", configuration.Server.Name))
-	if err != nil {
-		fmt.Printf("Error loading server keys: %v\n", err)
-		return
-	}
+	for _, server := range configuration.Servers {
+		fmt.Printf("Generating configuration for server: %s\n", server.Name)
 
-	serverConfig := wireguard.ServerConfiguration{
-		PublicIP:   configuration.Server.PublicIP,
-		Address:    configuration.Server.Address,
-		ListenPort: configuration.Server.ListenPort,
-		KeySet:     serverKeySet,
-		Interface:  configuration.Server.Interface,
-		DNS:        configuration.Server.DNS,
-	}
-
-	clientConfigs := make(map[string]wireguard.ClientConfiguration)
-	for i, client := range configuration.Clients {
-		clientKeySet, err := keyStore.Load(configuration.Seed, fmt.Sprintf("client-%s", client.Name))
+		serverKeySet, err := keyStore.Load(configuration.Seed, fmt.Sprintf("server-%s", server.Name))
 		if err != nil {
-			fmt.Printf("Error loading client %s keys: %v\n", client.Name, err)
-			return
+			fmt.Printf("Error loading server keys for %s: %v\n", server.Name, err)
+			continue // Continue to the next server
 		}
 
-		clientAddress, err := internal.GenerateClientAddress(configuration.Server.Address, i+1)
+		serverConfig := wireguard.ServerConfiguration{
+			PublicIP:   server.PublicIP,
+			Address:    server.Address,
+			ListenPort: server.ListenPort,
+			KeySet:     serverKeySet,
+			Interface:  server.Interface,
+			DNS:        server.DNS,
+		}
+
+		clientConfigs := make(map[string]wireguard.ClientConfiguration)
+		clientCounter := 0
+		for _, client := range configuration.Clients {
+			isClientForServer := false
+			for _, serverName := range client.Servers {
+				if serverName == server.Name {
+					isClientForServer = true
+					break
+				}
+			}
+
+			if !isClientForServer {
+				continue
+			}
+
+			clientKeySet, err := keyStore.Load(configuration.Seed, fmt.Sprintf("client-%s", client.Name))
+			if err != nil {
+				fmt.Printf("Error loading client %s keys: %v\n", client.Name, err)
+				continue
+			}
+
+			clientCounter++
+			clientAddress, err := internal.GenerateClientAddress(server.Address, clientCounter)
+			if err != nil {
+				fmt.Printf("Error generating address for client %s on server %s: %v\n", client.Name, server.Name, err)
+				continue
+			}
+
+			clientConfig := wireguard.ClientConfiguration{
+				Address:    clientAddress,
+				KeySet:     clientKeySet,
+				AllowedIPs: client.AllowedIps,
+			}
+
+			clientConfigs[client.Name] = clientConfig
+		}
+
+		if len(clientConfigs) == 0 {
+			fmt.Printf("No clients for server %s, skipping.\n", server.Name)
+			continue
+		}
+
+		wgConfig := wireguard.Configuration{
+			Server:  serverConfig,
+			Clients: clientConfigs,
+		}
+
+		rendered, err := wireguard.Render(wgConfig)
 		if err != nil {
-			fmt.Printf("Error generating address for client %s: %v\n", client.Name, err)
-			return
+			fmt.Printf("Error rendering configuration for server %s: %v\n", server.Name, err)
+			continue
 		}
 
-		clientConfig := wireguard.ClientConfiguration{
-			Address:    clientAddress,
-			KeySet:     clientKeySet,
-			AllowedIPs: client.AllowedIps,
-		}
-
-		clientConfigs[client.Name] = clientConfig
-	}
-	wgConfig := wireguard.Configuration{
-		Server:  serverConfig,
-		Clients: clientConfigs,
-	}
-
-	rendered, err := wireguard.Render(wgConfig)
-	if err != nil {
-		fmt.Printf("Error rendering configuration: %v\n", err)
-		return
-	}
-
-	outputDir := filepath.Join("generated", configuration.Seed)
-	err = os.MkdirAll(outputDir, 0755)
-	if err != nil {
-		fmt.Printf("Error creating output directory: %v\n", err)
-		return
-	}
-
-	serverConfigPath := filepath.Join(outputDir, "server.conf")
-	err = os.WriteFile(serverConfigPath, []byte(rendered.ServerConfig), 0600)
-	if err != nil {
-		fmt.Printf("Error writing server config: %v\n", err)
-		return
-	}
-	fmt.Printf("Server configuration written to: %s\n", serverConfigPath)
-
-	for clientName, clientConfig := range rendered.ClientConfig {
-		clientConfigPath := filepath.Join(outputDir, fmt.Sprintf("client-%s.conf", clientName))
-		err = os.WriteFile(clientConfigPath, []byte(clientConfig), 0600)
+		outputDir := filepath.Join("generated", configuration.Seed, server.Name)
+		err = os.MkdirAll(outputDir, 0755)
 		if err != nil {
-			fmt.Printf("Error writing client config %s: %v\n", clientName, err)
-			return
+			fmt.Printf("Error creating output directory for server %s: %v\n", server.Name, err)
+			continue
 		}
-		fmt.Printf("Client configuration written to: %s\n", clientConfigPath)
-	}
 
-	fmt.Printf("All configurations written to directory: %s\n", outputDir)
+		serverConfigPath := filepath.Join(outputDir, "server.conf")
+		err = os.WriteFile(serverConfigPath, []byte(rendered.ServerConfig), 0600)
+		if err != nil {
+			fmt.Printf("Error writing server config for %s: %v\n", server.Name, err)
+			continue
+		}
+		fmt.Printf("Server configuration for %s written to: %s\n", server.Name, serverConfigPath)
+
+		for clientName, clientConfigContent := range rendered.ClientConfig {
+			clientConfigPath := filepath.Join(outputDir, fmt.Sprintf("client-%s.conf", clientName))
+			err = os.WriteFile(clientConfigPath, []byte(clientConfigContent), 0600)
+			if err != nil {
+				fmt.Printf("Error writing client config %s for server %s: %v\n", clientName, server.Name, err)
+				continue
+			}
+			fmt.Printf("Client configuration %s for server %s written to: %s\n", clientName, server.Name, clientConfigPath)
+		}
+		fmt.Printf("All configurations for server %s written to directory: %s\n", server.Name, outputDir)
+	}
 }
