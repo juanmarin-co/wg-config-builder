@@ -218,3 +218,55 @@
             allowedIps:
               - 10.0.0.0/16
             persistentKeepalive: 25
+
+- name: client with bastion IP in allowedIps
+  input:
+    name: bastion-ip-mesh
+    hosts:
+      - name: bastion-1
+        endpoint: 10.0.0.1:51820
+        egressInterface: eth0
+        interface:
+          address: 172.20.0.1/32
+      - name: client-1
+        interface:
+          address: 172.20.0.2/32
+          dns:
+            - 8.8.8.8
+    routes:
+      - from: client-1
+        to: bastion-1
+        persistentKeepalive: 25
+        allowedIps:
+          - 10.10.0.0/16
+          - 172.20.0.1/32
+  expectedOutput:
+    hosts:
+      bastion-1:
+        interface:
+          address: 172.20.0.1/32
+          listenPort: 51820
+          postUp:
+            - iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+            - iptables -A FORWARD -i %i -s 172.20.0.2/32 -d 10.10.0.0/16 -j ACCEPT
+            - iptables -A FORWARD -i eth0 -s 10.10.0.0/16 -d 172.20.0.2/32 -j ACCEPT
+          postDown:
+            - iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
+            - iptables -D FORWARD -i %i -s 172.20.0.2/32 -d 10.10.0.0/16 -j ACCEPT
+            - iptables -D FORWARD -i eth0 -s 10.10.0.0/16 -d 172.20.0.2/32 -j ACCEPT
+        peers:
+          client-1:
+            allowedIps:
+              - 172.20.0.2/32
+      client-1:
+        interface:
+          address: 172.20.0.2/32
+          dns:
+            - 8.8.8.8
+        peers:
+          bastion-1:
+            endpoint: 10.0.0.1:51820
+            allowedIps:
+              - 10.10.0.0/16
+              - 172.20.0.1/32
+            persistentKeepalive: 25
