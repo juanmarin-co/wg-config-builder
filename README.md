@@ -30,7 +30,7 @@ You define **who** needs to connect to **what** in a YAML file. The tool generat
 **1. Install**
 
 ```bash
-go install github.com/juanmarin-co/wg-config-builder@latest
+go install github.com/juanmarin-co/wg-config-builder/cmd/wg-config-builder@latest
 ```
 
 **2. Define your network**
