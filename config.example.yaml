@@ -1,0 +1,45 @@
+name: example-mesh
+hosts:
+  - name: bastion-1
+    endpoint: 203.0.113.10:51820
+    egressInterface: eth0
+    interface:
+      address: 10.200.0.1/32
+  - name: bastion-2
+    endpoint: 203.0.113.20:51820
+    egressInterface: eth0
+    interface:
+      address: 10.200.0.2/32
+  - name: developer-alice
+    interface:
+      address: 10.200.0.10/32
+      dns:
+        - 8.8.8.8
+        - 8.8.4.4
+  - name: developer-bob
+    interface:
+      address: 10.200.0.11/32
+      dns:
+        - 8.8.8.8
+        - 8.8.4.4
+routes:
+  - from: developer-alice
+    to: bastion-1
+    persistentKeepalive: 25
+    allowedIps:
+      - 10.1.0.0/16
+  - from: developer-alice
+    to: bastion-2
+    persistentKeepalive: 25
+    allowedIps:
+      - 10.2.0.0/16
+  - from: developer-bob
+    to: bastion-1
+    persistentKeepalive: 25
+    allowedIps:
+      - 10.1.0.0/16
+  - from: developer-bob
+    to: bastion-2
+    persistentKeepalive: 25
+    allowedIps:
+      - 10.2.0.0/16
