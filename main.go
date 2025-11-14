@@ -7,12 +7,14 @@ import (
 	"path/filepath"
 
 	"github.com/juanmarin-co/wg-config-builder/internal"
+	"github.com/juanmarin-co/wg-config-builder/internal/mapper"
 	"github.com/juanmarin-co/wg-config-builder/internal/wireguard"
 )
 
 func main() {
 	configPath := flag.String("config", "config.json", "Path to the configuration file")
 	keystorePath := flag.String("keystore", "keystore.json", "Path to the keystore file")
+	baseOutputDir := flag.String("output", "generated", "Directory to output the generated configurations")
 	flag.Parse()
 
 	configuration, err := internal.LoadConfiguration(*configPath)
@@ -21,80 +23,74 @@ func main() {
 		return
 	}
 
-	keyStore := internal.NewKeyStore(*keystorePath)
-
-	serverKeySet, err := keyStore.Load(configuration.Seed, fmt.Sprintf("server-%s", configuration.Server.Name))
-	if err != nil {
-		fmt.Printf("Error loading server keys: %v\n", err)
-		return
-	}
-
-	serverConfig := wireguard.ServerConfiguration{
-		PublicIP:   configuration.Server.PublicIP,
-		Address:    configuration.Server.Address,
-		ListenPort: configuration.Server.ListenPort,
-		KeySet:     serverKeySet,
-		Interface:  configuration.Server.Interface,
-		DNS:        configuration.Server.DNS,
-	}
-
-	clientConfigs := make(map[string]wireguard.ClientConfiguration)
-	for i, client := range configuration.Clients {
-		clientKeySet, err := keyStore.Load(configuration.Seed, fmt.Sprintf("client-%s", client.Name))
-		if err != nil {
-			fmt.Printf("Error loading client %s keys: %v\n", client.Name, err)
-			return
-		}
-
-		clientAddress, err := internal.GenerateClientAddress(configuration.Server.Address, i+1)
-		if err != nil {
-			fmt.Printf("Error generating address for client %s: %v\n", client.Name, err)
-			return
-		}
-
-		clientConfig := wireguard.ClientConfiguration{
-			Address:    clientAddress,
-			KeySet:     clientKeySet,
-			AllowedIPs: client.AllowedIps,
-		}
-
-		clientConfigs[client.Name] = clientConfig
-	}
-	wgConfig := wireguard.Configuration{
-		Server:  serverConfig,
-		Clients: clientConfigs,
-	}
-
-	rendered, err := wireguard.Render(wgConfig)
-	if err != nil {
-		fmt.Printf("Error rendering configuration: %v\n", err)
-		return
-	}
-
-	outputDir := filepath.Join("generated", configuration.Seed)
+	outputDir := filepath.Join(*baseOutputDir, configuration.Name)
 	err = os.MkdirAll(outputDir, 0755)
 	if err != nil {
 		fmt.Printf("Error creating output directory: %v\n", err)
 		return
 	}
 
-	serverConfigPath := filepath.Join(outputDir, "server.conf")
-	err = os.WriteFile(serverConfigPath, []byte(rendered.ServerConfig), 0600)
-	if err != nil {
-		fmt.Printf("Error writing server config: %v\n", err)
-		return
-	}
-	fmt.Printf("Server configuration written to: %s\n", serverConfigPath)
+	keyStore := internal.NewKeyStore(*keystorePath)
 
-	for clientName, clientConfig := range rendered.ClientConfig {
-		clientConfigPath := filepath.Join(outputDir, fmt.Sprintf("client-%s.conf", clientName))
-		err = os.WriteFile(clientConfigPath, []byte(clientConfig), 0600)
+	// Process hosts
+	fmt.Println("Processing hosts...")
+	for index, host := range configuration.Hosts {
+		fmt.Printf("  Host %d: %s\n", index+1, host.Name)
+	}
+
+	// Load keysets into a map
+	fmt.Println("\nLoading keysets...")
+	keysets := make(map[string]wireguard.KeySet)
+	for _, host := range configuration.Hosts {
+		keyset, err := keyStore.Load(configuration.Name, host.Name)
 		if err != nil {
-			fmt.Printf("Error writing client config %s: %v\n", clientName, err)
+			fmt.Printf("Error loading keys for host %s: %v\n", host.Name, err)
 			return
 		}
-		fmt.Printf("Client configuration written to: %s\n", clientConfigPath)
+		keysets[host.Name] = keyset
 	}
 
-	fmt.Printf("All configurations written to directory: %s\n", outputDir)
+	// Load preshared keys for each route pair
+	fmt.Println("\nLoading preshared keys...")
+	presharedKeys := make(map[string]string)
+	for _, route := range configuration.Routes {
+		pairKey := mapper.GetPairKey(route.From, route.To)
+		if _, exists := presharedKeys[pairKey]; !exists {
+			psk, err := keyStore.LoadPresharedKey(configuration.Name, pairKey)
+			if err != nil {
+				fmt.Printf("Error loading preshared key for pair %s: %v\n", pairKey, err)
+				return
+			}
+			presharedKeys[pairKey] = psk
+		}
+	}
+
+	// Map internal.Configuration to wireguard.Configuration
+	fmt.Println("\nMapping configuration to WireGuard format...")
+	wgConfig, err := mapper.MapToWireguard(configuration, keysets, presharedKeys)
+	if err != nil {
+		fmt.Printf("Error mapping configuration: %v\n", err)
+		return
+	}
+	fmt.Printf("✓ Successfully mapped %d hosts and %d routes\n", len(configuration.Hosts), len(configuration.Routes))
+
+	// Render all configurations
+	rendered, err := wireguard.Render(wgConfig)
+	if err != nil {
+		fmt.Printf("Error rendering configurations: %v\n", err)
+		return
+	}
+
+	// Save each host configuration
+	for hostName, configContent := range rendered.Hosts {
+		configPath := filepath.Join(outputDir, fmt.Sprintf("%s.conf", hostName))
+		err = os.WriteFile(configPath, []byte(configContent), 0600)
+		if err != nil {
+			fmt.Printf("Error saving config for host %s: %v\n", hostName, err)
+			return
+		}
+		fmt.Printf("Configuration written to: %s\n", configPath)
+	}
+
+	fmt.Printf("\nAll configurations written to directory: %s\n", outputDir)
 }
