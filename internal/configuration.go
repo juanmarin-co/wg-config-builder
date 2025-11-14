@@ -4,40 +4,57 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 type Configuration struct {
-	Seed    string   `json:"seed"`
-	Server  Server   `json:"server"`
-	Clients []Client `json:"clients"`
+	Name   string  `json:"name" yaml:"name"`
+	Hosts  []Host  `json:"hosts" yaml:"hosts"`
+	Routes []Route `json:"routes" yaml:"routes"`
 }
 
-type Server struct {
-	Name       string   `json:"name"`
-	PublicIP   string   `json:"publicIp"`
-	Address    string   `json:"address"`
-	ListenPort uint16   `json:"listenPort"`
-	Interface  string   `json:"interface"`
-	DNS        []string `json:"dns"`
+type Host struct {
+	Name            string        `json:"name" yaml:"name"`
+	Endpoint        string        `json:"endpoint" yaml:"endpoint"`
+	EgressInterface string        `json:"egressInterface" yaml:"egressInterface"`
+	Interface       HostInterface `json:"interface" yaml:"interface"`
 }
 
-type Client struct {
-	Name       string   `json:"name"`
-	AllowedIps []string `json:"allowedIps"`
+type HostInterface struct {
+	Address string   `json:"address" yaml:"address"`
+	DNS     []string `json:"dns" yaml:"dns"`
+}
+
+type Route struct {
+	From                string   `json:"from" yaml:"from"`
+	To                  string   `json:"to" yaml:"to"`
+	AllowedIPs          []string `json:"allowedIps" yaml:"allowedIps"`
+	PersistentKeepalive uint16   `json:"persistentKeepalive" yaml:"persistentKeepalive"`
 }
 
 func LoadConfiguration(path string) (Configuration, error) {
-	file, err := os.Open(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return Configuration{}, fmt.Errorf("error opening config file %s: %w", path, err)
+		return Configuration{}, fmt.Errorf("error reading config file %s: %w", path, err)
 	}
 
-	defer file.Close()
-
 	var configuration Configuration
-	decoder := json.NewDecoder(file)
-	if err := decoder.Decode(&configuration); err != nil {
-		return Configuration{}, fmt.Errorf("error decoding config file %s: %w", path, err)
+	ext := strings.ToLower(filepath.Ext(path))
+
+	switch ext {
+	case ".json":
+		if err := json.Unmarshal(data, &configuration); err != nil {
+			return Configuration{}, fmt.Errorf("error decoding JSON config file %s: %w", path, err)
+		}
+	case ".yaml", ".yml":
+		if err := yaml.Unmarshal(data, &configuration); err != nil {
+			return Configuration{}, fmt.Errorf("error decoding YAML config file %s: %w", path, err)
+		}
+	default:
+		return Configuration{}, fmt.Errorf("unsupported config file format: %s (supported: .json, .yaml, .yml)", ext)
 	}
 
 	return configuration, nil
