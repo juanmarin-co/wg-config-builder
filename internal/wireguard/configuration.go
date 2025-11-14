@@ -1,21 +1,27 @@
 package wireguard
 
 type Configuration struct {
-	Server  ServerConfiguration
-	Clients map[string]ClientConfiguration
+	Hosts map[string]HostConfiguration `yaml:"hosts"`
 }
 
-type ServerConfiguration struct {
-	PublicIP   string
-	Address    string
-	ListenPort uint16
-	KeySet     KeySet
-	Interface  string
-	DNS        []string
+type HostConfiguration struct {
+	Interface HostInterfaceConfiguration       `yaml:"interface"`
+	Peers     map[string]HostPeerConfiguration `yaml:"peers"`
 }
 
-type ClientConfiguration struct {
-	Address    string
-	KeySet     KeySet
-	AllowedIPs []string
+type HostInterfaceConfiguration struct {
+	Address    string   `yaml:"address"`
+	ListenPort uint16   `yaml:"listenPort"`
+	DNS        []string `yaml:"dns"`
+	PrivateKey string   `yaml:"privateKey"`
+	PostUp     []string `yaml:"postUp"`
+	PostDown   []string `yaml:"postDown"`
+}
+
+type HostPeerConfiguration struct {
+	PublicKey           string   `yaml:"publicKey"`
+	PreSharedKey        string   `yaml:"presharedKey"`
+	Endpoint            string   `yaml:"endpoint"`
+	AllowedIPs          []string `yaml:"allowedIps"`
+	PersistentKeepalive uint16   `yaml:"persistentKeepalive"`
 }
