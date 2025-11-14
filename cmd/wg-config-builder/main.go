@@ -12,85 +12,168 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	flags := parseFlags()
+
+	configuration, err := loadAndValidateConfig(flags.configPath)
+	if err != nil {
+		return err
+	}
+
+	if err := ensureOutputDirectory(flags.baseOutputDir, configuration.Name); err != nil {
+		return err
+	}
+
+	keyStore := internal.NewKeyStore(flags.keystorePath)
+
+	keysets, err := loadHostKeysets(keyStore, configuration)
+	if err != nil {
+		return err
+	}
+
+	presharedKeys, err := loadPresharedKeys(keyStore, configuration)
+	if err != nil {
+		return err
+	}
+
+	wireguardConfig, err := buildWireguardConfig(configuration, keysets, presharedKeys)
+	if err != nil {
+		return err
+	}
+
+	if err := generateAndSaveConfigs(wireguardConfig, flags.baseOutputDir, configuration.Name); err != nil {
+		return err
+	}
+
+	fmt.Printf("\n✓ All configurations written to: %s\n",
+		filepath.Join(flags.baseOutputDir, configuration.Name))
+
+	return nil
+}
+
+type cliFlags struct {
+	configPath    string
+	keystorePath  string
+	baseOutputDir string
+}
+
+func parseFlags() cliFlags {
 	configPath := flag.String("config", "config.json", "Path to the configuration file")
 	keystorePath := flag.String("keystore", "keystore.json", "Path to the keystore file")
 	baseOutputDir := flag.String("output", "generated", "Directory to output the generated configurations")
 	flag.Parse()
 
-	configuration, err := internal.LoadConfiguration(*configPath)
+	return cliFlags{
+		configPath:    *configPath,
+		keystorePath:  *keystorePath,
+		baseOutputDir: *baseOutputDir,
+	}
+}
+
+func loadAndValidateConfig(configPath string) (internal.Configuration, error) {
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		return internal.Configuration{}, fmt.Errorf("configuration file not found: %s", configPath)
+	}
+
+	configuration, err := internal.LoadConfiguration(configPath)
 	if err != nil {
-		fmt.Printf("Error loading configuration: %v\n", err)
-		return
+		return internal.Configuration{}, fmt.Errorf("failed to load configuration from %s: %w", configPath, err)
 	}
 
-	outputDir := filepath.Join(*baseOutputDir, configuration.Name)
-	err = os.MkdirAll(outputDir, 0755)
-	if err != nil {
-		fmt.Printf("Error creating output directory: %v\n", err)
-		return
+	if len(configuration.Hosts) == 0 {
+		return internal.Configuration{}, fmt.Errorf("configuration contains no hosts")
 	}
 
-	keyStore := internal.NewKeyStore(*keystorePath)
+	fmt.Printf("Loaded configuration '%s' with %d hosts and %d routes\n",
+		configuration.Name, len(configuration.Hosts), len(configuration.Routes))
 
-	// Process hosts
-	fmt.Println("Processing hosts...")
-	for index, host := range configuration.Hosts {
-		fmt.Printf("  Host %d: %s\n", index+1, host.Name)
+	return configuration, nil
+}
+
+func ensureOutputDirectory(baseDir, networkName string) error {
+	outputDir := filepath.Join(baseDir, networkName)
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return fmt.Errorf("failed to create output directory %s: %w", outputDir, err)
 	}
+	return nil
+}
 
-	// Load keysets into a map
-	fmt.Println("\nLoading keysets...")
-	keysets := make(map[string]wireguard.KeySet)
-	for _, host := range configuration.Hosts {
-		keyset, err := keyStore.Load(configuration.Name, host.Name)
+func loadHostKeysets(keyStore *internal.KeyStore, config internal.Configuration) (map[string]wireguard.KeySet, error) {
+	fmt.Println("\nGenerating cryptographic keys...")
+	keysets := make(map[string]wireguard.KeySet, len(config.Hosts))
+
+	for _, host := range config.Hosts {
+		keyset, err := keyStore.Load(config.Name, host.Name)
 		if err != nil {
-			fmt.Printf("Error loading keys for host %s: %v\n", host.Name, err)
-			return
+			return nil, fmt.Errorf("failed to load keys for host '%s': %w", host.Name, err)
 		}
 		keysets[host.Name] = keyset
+		fmt.Printf("  ✓ %s\n", host.Name)
 	}
 
-	// Load preshared keys for each route pair
-	fmt.Println("\nLoading preshared keys...")
+	return keysets, nil
+}
+
+func loadPresharedKeys(keyStore *internal.KeyStore, config internal.Configuration) (map[string]string, error) {
+	fmt.Println("\nGenerating preshared keys for peer pairs...")
 	presharedKeys := make(map[string]string)
-	for _, route := range configuration.Routes {
+
+	for _, route := range config.Routes {
 		pairKey := mapper.GetPairKey(route.From, route.To)
-		if _, exists := presharedKeys[pairKey]; !exists {
-			psk, err := keyStore.LoadPresharedKey(configuration.Name, pairKey)
-			if err != nil {
-				fmt.Printf("Error loading preshared key for pair %s: %v\n", pairKey, err)
-				return
-			}
-			presharedKeys[pairKey] = psk
+
+		if _, exists := presharedKeys[pairKey]; exists {
+			continue
 		}
+
+		psk, err := keyStore.LoadPresharedKey(config.Name, pairKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load preshared key for pair %s: %w", pairKey, err)
+		}
+
+		presharedKeys[pairKey] = psk
+		fmt.Printf("  ✓ %s ↔ %s\n", route.From, route.To)
 	}
 
-	// Map internal.Configuration to wireguard.Configuration
-	fmt.Println("\nMapping configuration to WireGuard format...")
-	wgConfig, err := mapper.MapToWireguard(configuration, keysets, presharedKeys)
+	return presharedKeys, nil
+}
+
+func buildWireguardConfig(config internal.Configuration, keysets map[string]wireguard.KeySet, presharedKeys map[string]string) (wireguard.Configuration, error) {
+	fmt.Println("\nBuilding WireGuard configurations...")
+
+	wgConfig, err := mapper.MapToWireguard(config, keysets, presharedKeys)
 	if err != nil {
-		fmt.Printf("Error mapping configuration: %v\n", err)
-		return
+		return wireguard.Configuration{}, fmt.Errorf("failed to map configuration to WireGuard format: %w", err)
 	}
-	fmt.Printf("✓ Successfully mapped %d hosts and %d routes\n", len(configuration.Hosts), len(configuration.Routes))
 
-	// Render all configurations
+	fmt.Printf("  ✓ Mapped %d hosts with peer relationships\n", len(config.Hosts))
+	return wgConfig, nil
+}
+
+func generateAndSaveConfigs(wgConfig wireguard.Configuration, baseDir, networkName string) error {
+	fmt.Println("\nGenerating configuration files...")
+
 	rendered, err := wireguard.Render(wgConfig)
 	if err != nil {
-		fmt.Printf("Error rendering configurations: %v\n", err)
-		return
+		return fmt.Errorf("failed to render configurations: %w", err)
 	}
 
-	// Save each host configuration
+	outputDir := filepath.Join(baseDir, networkName)
+
 	for hostName, configContent := range rendered.Hosts {
 		configPath := filepath.Join(outputDir, fmt.Sprintf("%s.conf", hostName))
-		err = os.WriteFile(configPath, []byte(configContent), 0600)
-		if err != nil {
-			fmt.Printf("Error saving config for host %s: %v\n", hostName, err)
-			return
+
+		if err := os.WriteFile(configPath, []byte(configContent), 0600); err != nil {
+			return fmt.Errorf("failed to write config for host '%s': %w", hostName, err)
 		}
-		fmt.Printf("Configuration written to: %s\n", configPath)
+
+		fmt.Printf("  ✓ %s.conf\n", hostName)
 	}
 
-	fmt.Printf("\nAll configurations written to directory: %s\n", outputDir)
+	return nil
 }
