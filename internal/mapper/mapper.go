@@ -145,6 +145,10 @@ func addForwardingRules(
 		fromAddress := fromHostConfig.Interface.Address
 
 		for _, allowedIP := range route.AllowedIPs {
+			if isTrafficToSelf(allowedIP, host.Interface.Address) {
+				continue
+			}
+
 			postUp = append(postUp,
 				fmt.Sprintf("iptables -A FORWARD -i %%i -s %s -d %s -j ACCEPT", fromAddress, allowedIP),
 				fmt.Sprintf("iptables -A FORWARD -i %s -s %s -d %s -j ACCEPT", host.EgressInterface, allowedIP, fromAddress),
@@ -160,4 +164,8 @@ func addForwardingRules(
 	hostConfig.Interface.PostUp = postUp
 	hostConfig.Interface.PostDown = postDown
 	hosts[host.Name] = hostConfig
+}
+
+func isTrafficToSelf(allowedIP string, hostAddress string) bool {
+	return allowedIP == hostAddress
 }
