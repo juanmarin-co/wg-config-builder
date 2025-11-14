@@ -30,9 +30,7 @@ You define **who** needs to connect to **what** in a YAML file. The tool generat
 **1. Install**
 
 ```bash
-git clone https://github.com/yourusername/wg-config-builder.git
-cd wg-config-builder
-go build
+go install github.com/juanmarin-co/wg-config-builder@latest
 ```
 
 **2. Define your network**
@@ -68,7 +66,7 @@ routes:
 **3. Generate configs**
 
 ```bash
-./wg-config-builder -config my-network.yaml
+wg-config-builder -config my-network.yaml
 ```
 
 This creates `generated/my-network/gateway.conf` and `generated/my-network/laptop.conf`.
@@ -162,7 +160,7 @@ All keys are stored in `keystore.json` and reused on subsequent runs.
 ## Command Line Options
 
 ```bash
-./wg-config-builder [options]
+wg-config-builder [options]
 
 Options:
   -config string
