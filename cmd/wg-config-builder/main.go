@@ -51,9 +51,6 @@ func run() error {
 		return err
 	}
 
-	fmt.Printf("\n✓ All configurations written to: %s\n",
-		filepath.Join(flags.baseOutputDir, configuration.Name))
-
 	return nil
 }
 
@@ -172,7 +169,8 @@ func generateAndSaveConfigs(wgConfig wireguard.Configuration, baseDir, networkNa
 			return fmt.Errorf("failed to write config for host '%s': %w", hostName, err)
 		}
 
-		fmt.Printf("  ✓ %s.conf\n", hostName)
+		relativePath := filepath.Join(baseDir, networkName, fmt.Sprintf("%s.conf", hostName))
+		fmt.Printf("  ✓ %s\n", relativePath)
 	}
 
 	return nil
