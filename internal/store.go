@@ -16,7 +16,8 @@ type KeyStore struct {
 }
 
 type persistentData struct {
-	KeySets map[string]wireguard.KeySet `json:"keySets"`
+	KeySets       map[string]wireguard.KeySet `json:"keySets"`
+	PresharedKeys map[string]string           `json:"presharedKeys"`
 }
 
 func NewKeyStore(path string) *KeyStore {
@@ -60,7 +61,8 @@ func (store *KeyStore) loadFromDisk() (persistentData, error) {
 		if os.IsNotExist(err) {
 			// File doesn't exist yet, return empty data
 			return persistentData{
-				KeySets: make(map[string]wireguard.KeySet),
+				KeySets:       make(map[string]wireguard.KeySet),
+				PresharedKeys: make(map[string]string),
 			}, nil
 		}
 
@@ -74,6 +76,10 @@ func (store *KeyStore) loadFromDisk() (persistentData, error) {
 
 	if data.KeySets == nil {
 		data.KeySets = make(map[string]wireguard.KeySet)
+	}
+
+	if data.PresharedKeys == nil {
+		data.PresharedKeys = make(map[string]string)
 	}
 
 	return data, nil
@@ -109,10 +115,45 @@ func (store *KeyStore) saveToDisk(data persistentData) error {
 	return nil
 }
 
+func (store *KeyStore) LoadPresharedKey(seed string, pairKey string) (string, error) {
+	keyId := calculatePairKeyId(seed, pairKey)
+
+	data, err := store.loadFromDisk()
+	if err != nil {
+		return "", fmt.Errorf("failed to load from disk: %w", err)
+	}
+
+	if psk, exists := data.PresharedKeys[keyId]; exists {
+		return psk, nil
+	}
+
+	pskBytes, err := wireguard.GeneratePresharedKey()
+	if err != nil {
+		return "", fmt.Errorf("failed to generate preshared key: %w", err)
+	}
+
+	psk := base64.StdEncoding.EncodeToString(pskBytes)
+	data.PresharedKeys[keyId] = psk
+
+	if err := store.saveToDisk(data); err != nil {
+		return "", fmt.Errorf("failed to save keystore: %w", err)
+	}
+
+	return psk, nil
+}
+
 func calculateKeyId(seed string, name string) string {
 	hash := sha256.New()
 	hash.Write([]byte(seed))
 	hash.Write([]byte(name))
+
+	return base64.StdEncoding.EncodeToString(hash.Sum(nil))
+}
+
+func calculatePairKeyId(seed string, pairKey string) string {
+	hash := sha256.New()
+	hash.Write([]byte(seed))
+	hash.Write([]byte(pairKey))
 
 	return base64.StdEncoding.EncodeToString(hash.Sum(nil))
 }
