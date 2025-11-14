@@ -9,17 +9,11 @@ import (
 )
 
 type KeySet struct {
-	PresharedKey []byte `json:"presharedKey"`
-	PrivateKey   []byte `json:"privateKey"`
-	PublicKey    []byte `json:"publicKey"`
+	PrivateKey []byte `json:"privateKey"`
+	PublicKey  []byte `json:"publicKey"`
 }
 
 func GenerateKeySet() (KeySet, error) {
-	presharedKey := make([]byte, 32)
-	if _, err := io.ReadFull(rand.Reader, presharedKey); err != nil {
-		return KeySet{}, fmt.Errorf("error generating preshared key: %w", err)
-	}
-
 	privateKey := make([]byte, 32)
 	if _, err := io.ReadFull(rand.Reader, privateKey); err != nil {
 		return KeySet{}, fmt.Errorf("error generating private key: %w", err)
@@ -31,8 +25,15 @@ func GenerateKeySet() (KeySet, error) {
 	}
 
 	return KeySet{
-		PresharedKey: presharedKey,
-		PrivateKey:   privateKey,
-		PublicKey:    publicKey,
+		PrivateKey: privateKey,
+		PublicKey:  publicKey,
 	}, nil
+}
+
+func GeneratePresharedKey() ([]byte, error) {
+	key := make([]byte, 32)
+	if _, err := io.ReadFull(rand.Reader, key); err != nil {
+		return nil, fmt.Errorf("error generating preshared key: %w", err)
+	}
+	return key, nil
 }
