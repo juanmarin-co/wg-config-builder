@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/juanmarin-co/wg-config-builder/internal"
 	"github.com/juanmarin-co/wg-config-builder/internal/mapper"
@@ -94,7 +96,11 @@ func loadAndValidateConfig(configPath string) (internal.Configuration, error) {
 }
 
 func ensureOutputDirectory(baseDir, networkName string) error {
-	outputDir := filepath.Join(baseDir, networkName)
+	outputDir, err := outputDirForNetwork(baseDir, networkName)
+	if err != nil {
+		return err
+	}
+
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return fmt.Errorf("failed to create output directory %s: %w", outputDir, err)
 	}
@@ -160,10 +166,23 @@ func generateAndSaveConfigs(wgConfig wireguard.Configuration, baseDir, networkNa
 		return fmt.Errorf("failed to render configurations: %w", err)
 	}
 
-	outputDir := filepath.Join(baseDir, networkName)
+	outputDir, err := outputDirForNetwork(baseDir, networkName)
+	if err != nil {
+		return err
+	}
 
-	for hostName, configContent := range rendered.Hosts {
-		configPath := filepath.Join(outputDir, fmt.Sprintf("%s.conf", hostName))
+	hostNames := make([]string, 0, len(rendered.Hosts))
+	for hostName := range rendered.Hosts {
+		hostNames = append(hostNames, hostName)
+	}
+	sort.Strings(hostNames)
+
+	for _, hostName := range hostNames {
+		configContent := rendered.Hosts[hostName]
+		configPath, err := configPathForHost(outputDir, hostName)
+		if err != nil {
+			return err
+		}
 
 		if err := os.WriteFile(configPath, []byte(configContent), 0600); err != nil {
 			return fmt.Errorf("failed to write config for host '%s': %w", hostName, err)
@@ -171,6 +190,30 @@ func generateAndSaveConfigs(wgConfig wireguard.Configuration, baseDir, networkNa
 
 		relativePath := filepath.Join(baseDir, networkName, fmt.Sprintf("%s.conf", hostName))
 		fmt.Printf("  ✓ %s\n", relativePath)
+	}
+
+	return nil
+}
+
+func outputDirForNetwork(baseDir, networkName string) (string, error) {
+	if err := validatePathSegment("network name", networkName); err != nil {
+		return "", err
+	}
+
+	return filepath.Join(baseDir, networkName), nil
+}
+
+func configPathForHost(outputDir, hostName string) (string, error) {
+	if err := validatePathSegment("host name", hostName); err != nil {
+		return "", err
+	}
+
+	return filepath.Join(outputDir, fmt.Sprintf("%s.conf", hostName)), nil
+}
+
+func validatePathSegment(label, value string) error {
+	if value == "" || value == "." || value == ".." || strings.ContainsAny(value, `/\\`) {
+		return fmt.Errorf("invalid %s for output path: %q", label, value)
 	}
 
 	return nil

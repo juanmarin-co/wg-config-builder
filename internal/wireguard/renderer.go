@@ -2,6 +2,7 @@ package wireguard
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -51,7 +52,14 @@ func renderHostConfig(hostName string, config HostConfiguration) (string, error)
 		sb.WriteString(fmt.Sprintf("PostDown = %s\n", postDown))
 	}
 
-	for peerName, peer := range config.Peers {
+	peerNames := make([]string, 0, len(config.Peers))
+	for peerName := range config.Peers {
+		peerNames = append(peerNames, peerName)
+	}
+	sort.Strings(peerNames)
+
+	for _, peerName := range peerNames {
+		peer := config.Peers[peerName]
 		sb.WriteString(fmt.Sprintf("\n# Peer: %s\n", peerName))
 		sb.WriteString("[Peer]\n")
 		sb.WriteString(fmt.Sprintf("PublicKey = %s\n", peer.PublicKey))

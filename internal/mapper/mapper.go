@@ -3,7 +3,8 @@ package mapper
 import (
 	"encoding/base64"
 	"fmt"
-	"strings"
+	"net"
+	"strconv"
 
 	"github.com/juanmarin-co/wg-config-builder/internal"
 	"github.com/juanmarin-co/wg-config-builder/internal/wireguard"
@@ -17,20 +18,48 @@ func MapToWireguard(
 	hosts := make(map[string]wireguard.HostConfiguration)
 
 	for _, host := range configuration.Hosts {
-		keyset := keysets[host.Name]
+		if _, exists := hosts[host.Name]; exists {
+			return wireguard.Configuration{}, fmt.Errorf("duplicate host %q", host.Name)
+		}
+		if host.Interface.Address == "" {
+			return wireguard.Configuration{}, fmt.Errorf("missing interface address for host %q", host.Name)
+		}
+
+		keyset, exists := keysets[host.Name]
+		if !exists {
+			return wireguard.Configuration{}, fmt.Errorf("missing keyset for host %q", host.Name)
+		}
+
+		interfaceConfig, err := buildInterface(host, keyset)
+		if err != nil {
+			return wireguard.Configuration{}, err
+		}
 
 		hosts[host.Name] = wireguard.HostConfiguration{
-			Interface: buildInterface(host, keyset),
+			Interface: interfaceConfig,
 			Peers:     make(map[string]wireguard.HostPeerConfiguration),
 		}
 	}
 
 	for _, route := range configuration.Routes {
 		fromHost := findHost(configuration.Hosts, route.From)
+		if fromHost.Name == "" {
+			return wireguard.Configuration{}, fmt.Errorf("route references unknown host %q", route.From)
+		}
+
 		toHost := findHost(configuration.Hosts, route.To)
+		if toHost.Name == "" {
+			return wireguard.Configuration{}, fmt.Errorf("route references unknown host %q", route.To)
+		}
+		if route.From == route.To {
+			return wireguard.Configuration{}, fmt.Errorf("route cannot connect host %q to itself", route.From)
+		}
 
 		pairKey := GetPairKey(route.From, route.To)
-		psk := presharedKeys[pairKey]
+		psk, exists := presharedKeys[pairKey]
+		if !exists || psk == "" {
+			return wireguard.Configuration{}, fmt.Errorf("missing preshared key for pair %s", pairKey)
+		}
 
 		addPeerToHost(hosts, route.From, route.To, toHost, keysets, psk, route)
 		addPeerToHost(hosts, route.To, route.From, fromHost, keysets, psk, internal.Route{})
@@ -45,7 +74,7 @@ func MapToWireguard(
 	return wireguard.Configuration{Hosts: hosts}, nil
 }
 
-func buildInterface(host internal.Host, keyset wireguard.KeySet) wireguard.HostInterfaceConfiguration {
+func buildInterface(host internal.Host, keyset wireguard.KeySet) (wireguard.HostInterfaceConfiguration, error) {
 	interfaceConfig := wireguard.HostInterfaceConfiguration{
 		Address:    host.Interface.Address,
 		PrivateKey: base64.StdEncoding.EncodeToString(keyset.PrivateKey),
@@ -53,6 +82,9 @@ func buildInterface(host internal.Host, keyset wireguard.KeySet) wireguard.HostI
 
 	if host.Endpoint != "" {
 		port := extractPortFromEndpoint(host.Endpoint)
+		if port == 0 {
+			return wireguard.HostInterfaceConfiguration{}, fmt.Errorf("invalid endpoint for host %q: %s", host.Name, host.Endpoint)
+		}
 		interfaceConfig.ListenPort = port
 	}
 
@@ -60,18 +92,21 @@ func buildInterface(host internal.Host, keyset wireguard.KeySet) wireguard.HostI
 		interfaceConfig.DNS = host.Interface.DNS
 	}
 
-	return interfaceConfig
+	return interfaceConfig, nil
 }
 
 func extractPortFromEndpoint(endpoint string) uint16 {
-	parts := strings.Split(endpoint, ":")
-	if len(parts) != 2 {
+	_, portString, err := net.SplitHostPort(endpoint)
+	if err != nil {
 		return 0
 	}
 
-	var port uint16
-	fmt.Sscanf(parts[1], "%d", &port)
-	return port
+	port, err := strconv.ParseUint(portString, 10, 16)
+	if err != nil {
+		return 0
+	}
+
+	return uint16(port)
 }
 
 func findHost(hosts []internal.Host, name string) internal.Host {
@@ -99,14 +134,15 @@ func addPeerToHost(
 	presharedKey string,
 	route internal.Route,
 ) {
-	if _, exists := hosts[hostName].Peers[peerName]; exists {
-		return
-	}
+	hostConfig := hosts[hostName]
+	peer, exists := hostConfig.Peers[peerName]
 
-	peerKeyset := keysets[peerName]
-	peer := wireguard.HostPeerConfiguration{
-		PublicKey:    base64.StdEncoding.EncodeToString(peerKeyset.PublicKey),
-		PreSharedKey: presharedKey,
+	if !exists {
+		peerKeyset := keysets[peerName]
+		peer = wireguard.HostPeerConfiguration{
+			PublicKey:    base64.StdEncoding.EncodeToString(peerKeyset.PublicKey),
+			PreSharedKey: presharedKey,
+		}
 	}
 
 	if peerHost.Endpoint != "" {
@@ -114,15 +150,33 @@ func addPeerToHost(
 	}
 
 	if len(route.AllowedIPs) > 0 {
-		peer.AllowedIPs = route.AllowedIPs
-		peer.PersistentKeepalive = route.PersistentKeepalive
+		peer.AllowedIPs = appendUnique(peer.AllowedIPs, route.AllowedIPs...)
+		if route.PersistentKeepalive > 0 {
+			peer.PersistentKeepalive = route.PersistentKeepalive
+		}
 	} else {
-		peer.AllowedIPs = []string{peerHost.Interface.Address}
+		peer.AllowedIPs = appendUnique(peer.AllowedIPs, peerHost.Interface.Address)
 	}
 
-	hostConfig := hosts[hostName]
 	hostConfig.Peers[peerName] = peer
 	hosts[hostName] = hostConfig
+}
+
+func appendUnique(values []string, candidates ...string) []string {
+	seen := make(map[string]struct{}, len(values)+len(candidates))
+	for _, value := range values {
+		seen[value] = struct{}{}
+	}
+
+	for _, candidate := range candidates {
+		if _, exists := seen[candidate]; exists {
+			continue
+		}
+		values = append(values, candidate)
+		seen[candidate] = struct{}{}
+	}
+
+	return values
 }
 
 func addForwardingRules(

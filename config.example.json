@@ -1,20 +1,40 @@
 {
-  "seed": "example",
-  "server": {
-    "name": "bastion",
-    "publicIp": "142.251.35.238",
-    "address": "172.24.0.1/16",
-    "listenPort": 51820,
-    "interface": "ens4",
-    "dns": ["1.1.1.1", "1.0.0.1"]
-  },
-  "clients": [
+  "name": "example",
+  "hosts": [
+    {
+      "name": "bastion",
+      "endpoint": "142.251.35.238:51820",
+      "egressInterface": "ens4",
+      "interface": {
+        "address": "172.24.0.1/16"
+      }
+    },
     {
       "name": "simple",
-      "allowedIps": ["10.158.144.3/32"]
+      "interface": {
+        "address": "172.24.0.2/32",
+        "dns": ["1.1.1.1", "1.0.0.1"]
+      }
     },
     {
       "name": "all",
+      "interface": {
+        "address": "172.24.0.3/32",
+        "dns": ["1.1.1.1", "1.0.0.1"]
+      }
+    }
+  ],
+  "routes": [
+    {
+      "from": "simple",
+      "to": "bastion",
+      "persistentKeepalive": 25,
+      "allowedIps": ["10.158.144.3/32"]
+    },
+    {
+      "from": "all",
+      "to": "bastion",
+      "persistentKeepalive": 25,
       "allowedIps": ["0.0.0.0/0"]
     }
   ]

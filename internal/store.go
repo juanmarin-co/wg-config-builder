@@ -38,6 +38,15 @@ func (store *KeyStore) Load(seed string, name string) (wireguard.KeySet, error) 
 		return keySet, nil
 	}
 
+	legacyKeyId := calculateLegacyKeyId(seed, name)
+	if keySet, exists := data.KeySets[legacyKeyId]; exists {
+		data.KeySets[keyId] = keySet
+		if err := store.saveToDisk(data); err != nil {
+			return wireguard.KeySet{}, fmt.Errorf("failed to migrate legacy key id: %w", err)
+		}
+		return keySet, nil
+	}
+
 	keySet, err := wireguard.GenerateKeySet()
 	if err != nil {
 		return wireguard.KeySet{}, fmt.Errorf("failed to generate key set: %w", err)
@@ -127,6 +136,15 @@ func (store *KeyStore) LoadPresharedKey(seed string, pairKey string) (string, er
 		return psk, nil
 	}
 
+	legacyKeyId := calculateLegacyKeyId(seed, pairKey)
+	if psk, exists := data.PresharedKeys[legacyKeyId]; exists {
+		data.PresharedKeys[keyId] = psk
+		if err := store.saveToDisk(data); err != nil {
+			return "", fmt.Errorf("failed to migrate legacy preshared key id: %w", err)
+		}
+		return psk, nil
+	}
+
 	pskBytes, err := wireguard.GeneratePresharedKey()
 	if err != nil {
 		return "", fmt.Errorf("failed to generate preshared key: %w", err)
@@ -143,17 +161,27 @@ func (store *KeyStore) LoadPresharedKey(seed string, pairKey string) (string, er
 }
 
 func calculateKeyId(seed string, name string) string {
+	return calculateScopedKeyId(seed, name)
+}
+
+func calculatePairKeyId(seed string, pairKey string) string {
+	return calculateScopedKeyId(seed, pairKey)
+}
+
+func calculateScopedKeyId(parts ...string) string {
 	hash := sha256.New()
-	hash.Write([]byte(seed))
-	hash.Write([]byte(name))
+	for _, part := range parts {
+		hash.Write([]byte(fmt.Sprintf("%d:", len(part))))
+		hash.Write([]byte(part))
+	}
 
 	return base64.StdEncoding.EncodeToString(hash.Sum(nil))
 }
 
-func calculatePairKeyId(seed string, pairKey string) string {
+func calculateLegacyKeyId(seed string, name string) string {
 	hash := sha256.New()
 	hash.Write([]byte(seed))
-	hash.Write([]byte(pairKey))
+	hash.Write([]byte(name))
 
 	return base64.StdEncoding.EncodeToString(hash.Sum(nil))
 }
