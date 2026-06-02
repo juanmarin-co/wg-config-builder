@@ -5,7 +5,7 @@
 [![Go Version](https://img.shields.io/badge/go-%3E%3D1.21-blue.svg)](https://go.dev/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-Transform a simple network topology definition into complete WireGuard configurations with automatic key management, routing rules, and NAT setup.
+Transform a simple network topology definition into complete WireGuard configurations with automatic key management, routing rules, and NAT or routed forwarding setup.
 
 ## What It Does
 
@@ -13,7 +13,7 @@ You define **who** needs to connect to **what** in a YAML file. The tool generat
 
 - Complete WireGuard config files for each host
 - Cryptographic keypairs and preshared keys (stored and reused)
-- iptables rules for routing and NAT on gateway hosts
+- iptables rules for NAT or routed forwarding on gateway hosts
 - Proper peer relationships so traffic flows both ways
 
 ## Common Use Cases
@@ -102,9 +102,10 @@ The tool automatically creates the peer relationship on both sides:
 
 **About `allowedIps`:**
 - These are networks/IPs reachable **through** the peer
+- `allowedIps` is required and every entry must use explicit canonical CIDR notation
 - Traffic to these addresses will be sent through the WireGuard tunnel
 - It does NOT automatically include the peer's own IP
-- Only add the peer's IP if you need direct access to that host itself
+- Add the peer's WireGuard IP explicitly (for example `10.200.0.1/32`) if you need direct access to that host itself
 
 ## Configuration Reference
 
@@ -114,9 +115,9 @@ The tool automatically creates the peer relationship on both sides:
 ```yaml
 - name: gateway
   endpoint: 203.0.113.10:51820     # Public IP:port
-  egressInterface: eth0             # Interface for internet/NAT
+  egressInterface: eth0             # Interface used for transit forwarding
   interface:
-    address: 10.200.0.1/32          # WireGuard tunnel IP
+    address: 10.200.0.1/32          # WireGuard tunnel IP (/32 for IPv4, /128 for IPv6)
 ```
 
 **Client** (connects to gateways):
@@ -133,10 +134,18 @@ The tool automatically creates the peer relationship on both sides:
 ```yaml
 - from: client              # Source host
   to: gateway               # Destination host
-  persistentKeepalive: 25   # Optional: keep connection alive (for NAT)
-  allowedIps:               # Networks reachable through this route
+  mode: nat                 # Optional: nat (default) or routed
+  persistentKeepalive: 25   # Optional: keep connection alive (for NATed clients)
+  allowedIps:               # Required explicit canonical CIDRs reachable through this route
     - 10.0.0.0/8
 ```
+
+### NAT vs Routed Mode
+
+- `mode: nat` (default) adds route-scoped MASQUERADE rules on the gateway.
+- `mode: routed` forwards traffic without NAT. The upstream/private network must route the WireGuard client CIDRs back via the gateway.
+- Transit routes require the `to` host to define `egressInterface`.
+- IPv6 direct peer access is supported, but IPv6 transit forwarding is not generated yet.
 
 ## What Gets Generated
 
@@ -146,7 +155,7 @@ For each host, you get a complete WireGuard config:
 - WireGuard interface setup
 - Private key (auto-generated)
 - Listen port from endpoint
-- iptables rules for routing and NAT
+- iptables rules for NAT or routed forwarding
 - Peer sections for each client
 
 **Client config includes:**

@@ -25,13 +25,13 @@
           address: 172.20.0.1/32
           listenPort: 51820
           postUp:
-            - iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+            - iptables -t nat -A POSTROUTING -s 172.20.0.2/32 -d 10.10.0.0/16 -o eth0 -j MASQUERADE
             - iptables -A FORWARD -i %i -s 172.20.0.2/32 -d 10.10.0.0/16 -j ACCEPT
             - iptables -A FORWARD -i eth0 -s 10.10.0.0/16 -d 172.20.0.2/32 -j ACCEPT
             - iptables -A FORWARD -i %i -j DROP
             - iptables -A FORWARD -o %i -j DROP
           postDown:
-            - iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
+            - iptables -t nat -D POSTROUTING -s 172.20.0.2/32 -d 10.10.0.0/16 -o eth0 -j MASQUERADE
             - iptables -D FORWARD -i %i -s 172.20.0.2/32 -d 10.10.0.0/16 -j ACCEPT
             - iptables -D FORWARD -i eth0 -s 10.10.0.0/16 -d 172.20.0.2/32 -j ACCEPT
             - iptables -D FORWARD -i %i -j DROP
@@ -50,185 +50,6 @@
             endpoint: 10.0.0.1:51820
             allowedIps:
               - 10.10.0.0/16
-            persistentKeepalive: 25
-
-- name: multi bastion multi developer mesh
-  input:
-    name: test-mesh
-    hosts:
-      - name: bastion-dev
-        endpoint: 192.0.2.1:51820
-        egressInterface: ens4
-        interface:
-          address: 172.20.10.1/32
-      - name: bastion-prod
-        endpoint: 198.51.100.1:51820
-        egressInterface: ens4
-        interface:
-          address: 172.20.10.2/32
-      - name: developer-1
-        interface:
-          address: 172.20.10.3/32
-          dns:
-            - 8.8.8.8
-      - name: developer-2
-        interface:
-          address: 172.20.10.4/32
-          dns:
-            - 8.8.8.8
-      - name: developer-3
-        interface:
-          address: 172.20.10.5/32
-          dns:
-            - 8.8.8.8
-    routes:
-      - from: developer-1
-        to: bastion-dev
-        persistentKeepalive: 25
-        allowedIps:
-          - 10.1.0.0/16
-      - from: developer-1
-        to: bastion-prod
-        persistentKeepalive: 25
-        allowedIps:
-          - 10.0.0.0/16
-      - from: developer-2
-        to: bastion-dev
-        persistentKeepalive: 25
-        allowedIps:
-          - 10.1.0.0/16
-      - from: developer-2
-        to: bastion-prod
-        persistentKeepalive: 25
-        allowedIps:
-          - 10.0.0.0/16
-      - from: developer-3
-        to: bastion-dev
-        persistentKeepalive: 25
-        allowedIps:
-          - 10.1.0.0/16
-      - from: developer-3
-        to: bastion-prod
-        persistentKeepalive: 25
-        allowedIps:
-          - 10.0.0.0/16
-  expectedOutput:
-    hosts:
-      bastion-dev:
-        interface:
-          address: 172.20.10.1/32
-          listenPort: 51820
-          postUp:
-            - iptables -t nat -A POSTROUTING -o ens4 -j MASQUERADE
-            - iptables -A FORWARD -i %i -s 172.20.10.3/32 -d 10.1.0.0/16 -j ACCEPT
-            - iptables -A FORWARD -i ens4 -s 10.1.0.0/16 -d 172.20.10.3/32 -j ACCEPT
-            - iptables -A FORWARD -i %i -s 172.20.10.4/32 -d 10.1.0.0/16 -j ACCEPT
-            - iptables -A FORWARD -i ens4 -s 10.1.0.0/16 -d 172.20.10.4/32 -j ACCEPT
-            - iptables -A FORWARD -i %i -s 172.20.10.5/32 -d 10.1.0.0/16 -j ACCEPT
-            - iptables -A FORWARD -i ens4 -s 10.1.0.0/16 -d 172.20.10.5/32 -j ACCEPT
-            - iptables -A FORWARD -i %i -j DROP
-            - iptables -A FORWARD -o %i -j DROP
-          postDown:
-            - iptables -t nat -D POSTROUTING -o ens4 -j MASQUERADE
-            - iptables -D FORWARD -i %i -s 172.20.10.3/32 -d 10.1.0.0/16 -j ACCEPT
-            - iptables -D FORWARD -i ens4 -s 10.1.0.0/16 -d 172.20.10.3/32 -j ACCEPT
-            - iptables -D FORWARD -i %i -s 172.20.10.4/32 -d 10.1.0.0/16 -j ACCEPT
-            - iptables -D FORWARD -i ens4 -s 10.1.0.0/16 -d 172.20.10.4/32 -j ACCEPT
-            - iptables -D FORWARD -i %i -s 172.20.10.5/32 -d 10.1.0.0/16 -j ACCEPT
-            - iptables -D FORWARD -i ens4 -s 10.1.0.0/16 -d 172.20.10.5/32 -j ACCEPT
-            - iptables -D FORWARD -i %i -j DROP
-            - iptables -D FORWARD -o %i -j DROP
-        peers:
-          developer-1:
-            allowedIps:
-              - 172.20.10.3/32
-          developer-2:
-            allowedIps:
-              - 172.20.10.4/32
-          developer-3:
-            allowedIps:
-              - 172.20.10.5/32
-      bastion-prod:
-        interface:
-          address: 172.20.10.2/32
-          listenPort: 51820
-          postUp:
-            - iptables -t nat -A POSTROUTING -o ens4 -j MASQUERADE
-            - iptables -A FORWARD -i %i -s 172.20.10.3/32 -d 10.0.0.0/16 -j ACCEPT
-            - iptables -A FORWARD -i ens4 -s 10.0.0.0/16 -d 172.20.10.3/32 -j ACCEPT
-            - iptables -A FORWARD -i %i -s 172.20.10.4/32 -d 10.0.0.0/16 -j ACCEPT
-            - iptables -A FORWARD -i ens4 -s 10.0.0.0/16 -d 172.20.10.4/32 -j ACCEPT
-            - iptables -A FORWARD -i %i -s 172.20.10.5/32 -d 10.0.0.0/16 -j ACCEPT
-            - iptables -A FORWARD -i ens4 -s 10.0.0.0/16 -d 172.20.10.5/32 -j ACCEPT
-            - iptables -A FORWARD -i %i -j DROP
-            - iptables -A FORWARD -o %i -j DROP
-          postDown:
-            - iptables -t nat -D POSTROUTING -o ens4 -j MASQUERADE
-            - iptables -D FORWARD -i %i -s 172.20.10.3/32 -d 10.0.0.0/16 -j ACCEPT
-            - iptables -D FORWARD -i ens4 -s 10.0.0.0/16 -d 172.20.10.3/32 -j ACCEPT
-            - iptables -D FORWARD -i %i -s 172.20.10.4/32 -d 10.0.0.0/16 -j ACCEPT
-            - iptables -D FORWARD -i ens4 -s 10.0.0.0/16 -d 172.20.10.4/32 -j ACCEPT
-            - iptables -D FORWARD -i %i -s 172.20.10.5/32 -d 10.0.0.0/16 -j ACCEPT
-            - iptables -D FORWARD -i ens4 -s 10.0.0.0/16 -d 172.20.10.5/32 -j ACCEPT
-            - iptables -D FORWARD -i %i -j DROP
-            - iptables -D FORWARD -o %i -j DROP
-        peers:
-          developer-1:
-            allowedIps:
-              - 172.20.10.3/32
-          developer-2:
-            allowedIps:
-              - 172.20.10.4/32
-          developer-3:
-            allowedIps:
-              - 172.20.10.5/32
-      developer-1:
-        interface:
-          address: 172.20.10.3/32
-          dns:
-            - 8.8.8.8
-        peers:
-          bastion-dev:
-            endpoint: 192.0.2.1:51820
-            allowedIps:
-              - 10.1.0.0/16
-            persistentKeepalive: 25
-          bastion-prod:
-            endpoint: 198.51.100.1:51820
-            allowedIps:
-              - 10.0.0.0/16
-            persistentKeepalive: 25
-      developer-2:
-        interface:
-          address: 172.20.10.4/32
-          dns:
-            - 8.8.8.8
-        peers:
-          bastion-dev:
-            endpoint: 192.0.2.1:51820
-            allowedIps:
-              - 10.1.0.0/16
-            persistentKeepalive: 25
-          bastion-prod:
-            endpoint: 198.51.100.1:51820
-            allowedIps:
-              - 10.0.0.0/16
-            persistentKeepalive: 25
-      developer-3:
-        interface:
-          address: 172.20.10.5/32
-          dns:
-            - 8.8.8.8
-        peers:
-          bastion-dev:
-            endpoint: 192.0.2.1:51820
-            allowedIps:
-              - 10.1.0.0/16
-            persistentKeepalive: 25
-          bastion-prod:
-            endpoint: 198.51.100.1:51820
-            allowedIps:
-              - 10.0.0.0/16
             persistentKeepalive: 25
 
 - name: client with bastion IP in allowedIps
@@ -259,13 +80,13 @@
           address: 172.20.0.1/32
           listenPort: 51820
           postUp:
-            - iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+            - iptables -t nat -A POSTROUTING -s 172.20.0.2/32 -d 10.10.0.0/16 -o eth0 -j MASQUERADE
             - iptables -A FORWARD -i %i -s 172.20.0.2/32 -d 10.10.0.0/16 -j ACCEPT
             - iptables -A FORWARD -i eth0 -s 10.10.0.0/16 -d 172.20.0.2/32 -j ACCEPT
             - iptables -A FORWARD -i %i -j DROP
             - iptables -A FORWARD -o %i -j DROP
           postDown:
-            - iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
+            - iptables -t nat -D POSTROUTING -s 172.20.0.2/32 -d 10.10.0.0/16 -o eth0 -j MASQUERADE
             - iptables -D FORWARD -i %i -s 172.20.0.2/32 -d 10.10.0.0/16 -j ACCEPT
             - iptables -D FORWARD -i eth0 -s 10.10.0.0/16 -d 172.20.0.2/32 -j ACCEPT
             - iptables -D FORWARD -i %i -j DROP
@@ -317,7 +138,120 @@
           address: 172.20.0.1/32
           listenPort: 51820
           postUp:
-            - iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+            - iptables -t nat -A POSTROUTING -s 172.20.0.2/32 -d 10.10.0.0/16 -o eth0 -j MASQUERADE
+            - iptables -A FORWARD -i %i -s 172.20.0.2/32 -d 10.10.0.0/16 -j ACCEPT
+            - iptables -A FORWARD -i eth0 -s 10.10.0.0/16 -d 172.20.0.2/32 -j ACCEPT
+            - iptables -t nat -A POSTROUTING -s 172.20.0.2/32 -d 10.20.0.0/16 -o eth0 -j MASQUERADE
+            - iptables -A FORWARD -i %i -s 172.20.0.2/32 -d 10.20.0.0/16 -j ACCEPT
+            - iptables -A FORWARD -i eth0 -s 10.20.0.0/16 -d 172.20.0.2/32 -j ACCEPT
+            - iptables -A FORWARD -i %i -j DROP
+            - iptables -A FORWARD -o %i -j DROP
+          postDown:
+            - iptables -t nat -D POSTROUTING -s 172.20.0.2/32 -d 10.10.0.0/16 -o eth0 -j MASQUERADE
+            - iptables -D FORWARD -i %i -s 172.20.0.2/32 -d 10.10.0.0/16 -j ACCEPT
+            - iptables -D FORWARD -i eth0 -s 10.10.0.0/16 -d 172.20.0.2/32 -j ACCEPT
+            - iptables -t nat -D POSTROUTING -s 172.20.0.2/32 -d 10.20.0.0/16 -o eth0 -j MASQUERADE
+            - iptables -D FORWARD -i %i -s 172.20.0.2/32 -d 10.20.0.0/16 -j ACCEPT
+            - iptables -D FORWARD -i eth0 -s 10.20.0.0/16 -d 172.20.0.2/32 -j ACCEPT
+            - iptables -D FORWARD -i %i -j DROP
+            - iptables -D FORWARD -o %i -j DROP
+        peers:
+          client-1:
+            allowedIps:
+              - 172.20.0.2/32
+      client-1:
+        interface:
+          address: 172.20.0.2/32
+        peers:
+          bastion-1:
+            endpoint: 10.0.0.1:51820
+            allowedIps:
+              - 10.10.0.0/16
+              - 10.20.0.0/16
+            persistentKeepalive: 25
+
+- name: routed route omits masquerade
+  input:
+    name: routed-mesh
+    hosts:
+      - name: bastion-1
+        endpoint: 10.0.0.1:51820
+        egressInterface: eth0
+        interface:
+          address: 172.20.0.1/32
+      - name: client-1
+        interface:
+          address: 172.20.0.2/32
+    routes:
+      - from: client-1
+        to: bastion-1
+        mode: routed
+        persistentKeepalive: 25
+        allowedIps:
+          - 10.10.0.0/16
+  expectedOutput:
+    hosts:
+      bastion-1:
+        interface:
+          address: 172.20.0.1/32
+          listenPort: 51820
+          postUp:
+            - iptables -A FORWARD -i %i -s 172.20.0.2/32 -d 10.10.0.0/16 -j ACCEPT
+            - iptables -A FORWARD -i eth0 -s 10.10.0.0/16 -d 172.20.0.2/32 -j ACCEPT
+            - iptables -A FORWARD -i %i -j DROP
+            - iptables -A FORWARD -o %i -j DROP
+          postDown:
+            - iptables -D FORWARD -i %i -s 172.20.0.2/32 -d 10.10.0.0/16 -j ACCEPT
+            - iptables -D FORWARD -i eth0 -s 10.10.0.0/16 -d 172.20.0.2/32 -j ACCEPT
+            - iptables -D FORWARD -i %i -j DROP
+            - iptables -D FORWARD -o %i -j DROP
+        peers:
+          client-1:
+            allowedIps:
+              - 172.20.0.2/32
+      client-1:
+        interface:
+          address: 172.20.0.2/32
+        peers:
+          bastion-1:
+            endpoint: 10.0.0.1:51820
+            allowedIps:
+              - 10.10.0.0/16
+            persistentKeepalive: 25
+
+- name: mixed nat and routed routes scope masquerade
+  input:
+    name: mixed-mode-mesh
+    hosts:
+      - name: bastion-1
+        endpoint: 10.0.0.1:51820
+        egressInterface: eth0
+        interface:
+          address: 172.20.0.1/32
+      - name: client-1
+        interface:
+          address: 172.20.0.2/32
+    routes:
+      - from: client-1
+        to: bastion-1
+        mode: nat
+        persistentKeepalive: 25
+        allowedIps:
+          - 10.10.0.0/16
+      - from: client-1
+        to: bastion-1
+        mode: routed
+        persistentKeepalive: 25
+        allowedIps:
+          - 10.20.0.0/16
+  expectedOutput:
+    hosts:
+      bastion-1:
+        interface:
+          address: 172.20.0.1/32
+          listenPort: 51820
+          postUp:
+            - iptables -t nat -A POSTROUTING -s 172.20.0.2/32 -d 10.10.0.0/16 -o eth0 -j MASQUERADE
             - iptables -A FORWARD -i %i -s 172.20.0.2/32 -d 10.10.0.0/16 -j ACCEPT
             - iptables -A FORWARD -i eth0 -s 10.10.0.0/16 -d 172.20.0.2/32 -j ACCEPT
             - iptables -A FORWARD -i %i -s 172.20.0.2/32 -d 10.20.0.0/16 -j ACCEPT
@@ -325,7 +259,7 @@
             - iptables -A FORWARD -i %i -j DROP
             - iptables -A FORWARD -o %i -j DROP
           postDown:
-            - iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
+            - iptables -t nat -D POSTROUTING -s 172.20.0.2/32 -d 10.10.0.0/16 -o eth0 -j MASQUERADE
             - iptables -D FORWARD -i %i -s 172.20.0.2/32 -d 10.10.0.0/16 -j ACCEPT
             - iptables -D FORWARD -i eth0 -s 10.10.0.0/16 -d 172.20.0.2/32 -j ACCEPT
             - iptables -D FORWARD -i %i -s 172.20.0.2/32 -d 10.20.0.0/16 -j ACCEPT

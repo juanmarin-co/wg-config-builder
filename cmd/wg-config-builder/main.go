@@ -89,6 +89,10 @@ func loadAndValidateConfig(configPath string) (internal.Configuration, error) {
 		return internal.Configuration{}, fmt.Errorf("configuration contains no hosts")
 	}
 
+	if err := mapper.ValidateConfiguration(configuration); err != nil {
+		return internal.Configuration{}, fmt.Errorf("invalid configuration: %w", err)
+	}
+
 	fmt.Printf("Loaded configuration '%s' with %d hosts and %d routes\n",
 		configuration.Name, len(configuration.Hosts), len(configuration.Routes))
 

@@ -31,6 +31,7 @@ type HostInterface struct {
 type Route struct {
 	From                string   `json:"from" yaml:"from"`
 	To                  string   `json:"to" yaml:"to"`
+	Mode                string   `json:"mode" yaml:"mode"`
 	AllowedIPs          []string `json:"allowedIps" yaml:"allowedIps"`
 	PersistentKeepalive uint16   `json:"persistentKeepalive" yaml:"persistentKeepalive"`
 }

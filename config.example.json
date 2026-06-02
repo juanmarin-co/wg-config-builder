@@ -6,7 +6,7 @@
       "endpoint": "142.251.35.238:51820",
       "egressInterface": "ens4",
       "interface": {
-        "address": "172.24.0.1/16"
+        "address": "172.24.0.1/32"
       }
     },
     {

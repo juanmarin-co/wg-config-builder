@@ -12,6 +12,37 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestLoadAndValidateConfigRejectsInvalidMapperConfig(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	require.NoError(t, os.WriteFile(configPath, []byte(`{
+  "name": "invalid-mode-mesh",
+  "hosts": [
+    {
+      "name": "bastion-1",
+      "endpoint": "10.0.0.1:51820",
+      "egressInterface": "eth0",
+      "interface": { "address": "172.20.0.1/32" }
+    },
+    {
+      "name": "client-1",
+      "interface": { "address": "172.20.0.2/32" }
+    }
+  ],
+  "routes": [
+    {
+      "from": "client-1",
+      "to": "bastion-1",
+      "mode": "bridged",
+      "allowedIps": ["10.10.0.0/16"]
+    }
+  ]
+}`), 0600))
+
+	_, err := loadAndValidateConfig(configPath)
+
+	require.EqualError(t, err, `invalid configuration: route client-1 -> bastion-1 has invalid mode "bridged" (supported: nat, routed)`)
+}
+
 func TestEnsureOutputDirectoryRejectsNetworkPathTraversal(t *testing.T) {
 	rootDir := t.TempDir()
 	baseDir := filepath.Join(rootDir, "generated")

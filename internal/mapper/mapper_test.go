@@ -73,9 +73,245 @@ func TestMapToWireguard(t *testing.T) {
 	}
 }
 
+func TestMapToWireguardExampleJSONConfigUsesMapperSchema(t *testing.T) {
+	config, err := internal.LoadConfiguration(filepath.Join("..", "..", "config.example.json"))
+	require.NoError(t, err)
+
+	_, err = mapToWireguardForTest(t, config)
+	require.NoError(t, err)
+}
+
 func TestMapToWireguardAddsTerminalForwardDropsForEgressHost(t *testing.T) {
+	result, err := mapToWireguardForTest(t, baseClientBastionConfig())
+	require.NoError(t, err)
+
+	bastion := result.Hosts["bastion-1"]
+	assert.Equal(t, []string{
+		"iptables -A FORWARD -i %i -j DROP",
+		"iptables -A FORWARD -o %i -j DROP",
+	}, bastion.Interface.PostUp[len(bastion.Interface.PostUp)-2:])
+	assert.Equal(t, []string{
+		"iptables -D FORWARD -i %i -j DROP",
+		"iptables -D FORWARD -o %i -j DROP",
+	}, bastion.Interface.PostDown[len(bastion.Interface.PostDown)-2:])
+}
+
+func TestMapToWireguardInvalidRouteModeReturnsError(t *testing.T) {
+	config := baseClientBastionConfig()
+	config.Routes[0].Mode = "bridged"
+
+	_, err := mapToWireguardForTest(t, config)
+	require.EqualError(t, err, `route client-1 -> bastion-1 has invalid mode "bridged" (supported: nat, routed)`)
+}
+
+func TestMapToWireguardRequiresAllowedIPs(t *testing.T) {
+	config := baseClientBastionConfig()
+	config.Routes[0].AllowedIPs = nil
+
+	_, err := mapToWireguardForTest(t, config)
+	require.EqualError(t, err, `route client-1 -> bastion-1 must define at least one allowedIps entry`)
+}
+
+func TestMapToWireguardRequiresAllowedIPsExplicitCanonicalCIDRNotation(t *testing.T) {
+	tests := []struct {
+		name          string
+		allowedIP     string
+		expectedError string
+	}{
+		{
+			name:          "bare ip",
+			allowedIP:     "10.10.0.1",
+			expectedError: `route client-1 -> bastion-1 has invalid allowedIps entry "10.10.0.1": must be an explicit CIDR`,
+		},
+		{
+			name:          "host bits set",
+			allowedIP:     "10.10.0.1/24",
+			expectedError: `route client-1 -> bastion-1 has invalid allowedIps entry "10.10.0.1/24": must be a canonical CIDR`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := baseClientBastionConfig()
+			config.Routes[0].AllowedIPs = []string{tt.allowedIP}
+
+			_, err := mapToWireguardForTest(t, config)
+			require.EqualError(t, err, tt.expectedError)
+		})
+	}
+}
+
+func TestMapToWireguardRequiresSingleHostInterfaceCIDR(t *testing.T) {
+	tests := []struct {
+		name          string
+		address       string
+		expectedError string
+	}{
+		{
+			name:          "missing cidr",
+			address:       "172.20.0.2",
+			expectedError: `invalid interface address for host "client-1": "172.20.0.2" must be an explicit single-host CIDR`,
+		},
+		{
+			name:          "subnet cidr",
+			address:       "172.20.0.0/24",
+			expectedError: `invalid interface address for host "client-1": "172.20.0.0/24" must be a single-host CIDR (/32 for IPv4 or /128 for IPv6)`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := baseClientBastionConfig()
+			config.Hosts[1].Interface.Address = tt.address
+
+			_, err := mapToWireguardForTest(t, config)
+			require.EqualError(t, err, tt.expectedError)
+		})
+	}
+}
+
+func TestMapToWireguardRequiresEgressInterfaceForTransitRoute(t *testing.T) {
+	config := baseClientBastionConfig()
+	config.Hosts[0].EgressInterface = ""
+
+	_, err := mapToWireguardForTest(t, config)
+	require.EqualError(t, err, `route client-1 -> bastion-1 has transit allowedIps "10.10.0.0/16" but host "bastion-1" is missing egressInterface`)
+}
+
+func TestMapToWireguardDoesNotGenerateFirewallRulesWithoutTransitRoutes(t *testing.T) {
+	config := baseClientBastionConfig()
+	config.Hosts[0].EgressInterface = ""
+	config.Routes[0].AllowedIPs = []string{"172.20.0.1/32"}
+
+	result, err := mapToWireguardForTest(t, config)
+	require.NoError(t, err)
+
+	bastion := result.Hosts["bastion-1"]
+	assert.Empty(t, bastion.Interface.PostUp)
+	assert.Empty(t, bastion.Interface.PostDown)
+}
+
+func TestMapToWireguardTreatsCanonicalSelfTrafficAsDirect(t *testing.T) {
 	config := internal.Configuration{
-		Name: "restrictive-forwarding-mesh",
+		Name: "canonical-self-mesh",
+		Hosts: []internal.Host{
+			{
+				Name:            "bastion-1",
+				EgressInterface: "eth0",
+				Interface: internal.HostInterface{
+					Address: "2001:db8::1/128",
+				},
+			},
+			{
+				Name: "client-1",
+				Interface: internal.HostInterface{
+					Address: "2001:db8::2/128",
+				},
+			},
+		},
+		Routes: []internal.Route{
+			{
+				From:       "client-1",
+				To:         "bastion-1",
+				AllowedIPs: []string{"2001:0db8:0:0:0:0:0:1/128"},
+			},
+		},
+	}
+
+	result, err := mapToWireguardForTest(t, config)
+	require.NoError(t, err)
+
+	bastion := result.Hosts["bastion-1"]
+	assert.Empty(t, bastion.Interface.PostUp)
+	assert.Empty(t, bastion.Interface.PostDown)
+}
+
+func TestMapToWireguardRejectsIPv6TransitRoutes(t *testing.T) {
+	config := baseClientBastionConfig()
+	config.Routes[0].AllowedIPs = []string{"2001:db8:10::/64"}
+
+	_, err := mapToWireguardForTest(t, config)
+	require.EqualError(t, err, `route client-1 -> bastion-1 uses IPv6 transit network "2001:db8:10::/64", but IPv6 forwarding is not supported yet`)
+}
+
+func TestMapToWireguardIPv4TransitRequiresIPv4SourceAddress(t *testing.T) {
+	config := baseClientBastionConfig()
+	config.Hosts[0].Interface.Address = "fd00::1/128"
+	config.Hosts[1].Interface.Address = "fd00::2/128"
+
+	_, err := mapToWireguardForTest(t, config)
+	require.EqualError(t, err, `route client-1 -> bastion-1 uses IPv4 transit network "10.10.0.0/16" but source host "client-1" address "fd00::2/128" is not IPv4`)
+}
+
+func TestMapToWireguardAllowsOverlappingAllowedIPsForDifferentSources(t *testing.T) {
+	config := baseClientBastionConfig()
+	config.Hosts = append(config.Hosts, internal.Host{
+		Name: "client-2",
+		Interface: internal.HostInterface{
+			Address: "172.20.0.3/32",
+		},
+	})
+	config.Routes = append(config.Routes, internal.Route{
+		From:       "client-2",
+		To:         "bastion-1",
+		AllowedIPs: []string{"10.10.0.0/16"},
+	})
+
+	_, err := mapToWireguardForTest(t, config)
+	require.NoError(t, err)
+}
+
+func TestMapToWireguardRejectsOverlappingAllowedIPsForSameSource(t *testing.T) {
+	tests := []struct {
+		name          string
+		secondPeer    string
+		expectedError string
+	}{
+		{
+			name:          "same peer",
+			secondPeer:    "bastion-1",
+			expectedError: `route client-1 -> bastion-1 allowedIps "10.1.0.0/16" overlaps with route client-1 -> bastion-1 allowedIps "10.0.0.0/8"`,
+		},
+		{
+			name:          "different peer",
+			secondPeer:    "bastion-2",
+			expectedError: `route client-1 -> bastion-2 allowedIps "10.1.0.0/16" overlaps with route client-1 -> bastion-1 allowedIps "10.0.0.0/8"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := baseClientBastionConfig()
+			config.Hosts = append(config.Hosts, internal.Host{
+				Name:            "bastion-2",
+				Endpoint:        "10.0.0.2:51820",
+				EgressInterface: "eth0",
+				Interface: internal.HostInterface{
+					Address: "172.20.0.3/32",
+				},
+			})
+			config.Routes = []internal.Route{
+				{
+					From:       "client-1",
+					To:         "bastion-1",
+					AllowedIPs: []string{"10.0.0.0/8"},
+				},
+				{
+					From:       "client-1",
+					To:         tt.secondPeer,
+					AllowedIPs: []string{"10.1.0.0/16"},
+				},
+			}
+
+			_, err := mapToWireguardForTest(t, config)
+			require.EqualError(t, err, tt.expectedError)
+		})
+	}
+}
+
+func baseClientBastionConfig() internal.Configuration {
+	return internal.Configuration{
+		Name: "test-mesh",
 		Hosts: []internal.Host{
 			{
 				Name:            "bastion-1",
@@ -100,37 +336,30 @@ func TestMapToWireguardAddsTerminalForwardDropsForEgressHost(t *testing.T) {
 			},
 		},
 	}
+}
 
-	bastionKeySet, err := wireguard.GenerateKeySet()
-	require.NoError(t, err)
-	clientKeySet, err := wireguard.GenerateKeySet()
-	require.NoError(t, err)
+func mapToWireguardForTest(t *testing.T, config internal.Configuration) (wireguard.Configuration, error) {
+	t.Helper()
 
-	result, err := MapToWireguard(
-		config,
-		map[string]wireguard.KeySet{
-			"bastion-1": bastionKeySet,
-			"client-1":  clientKeySet,
-		},
-		map[string]string{GetPairKey("client-1", "bastion-1"): "test-preshared-key"},
-	)
-	require.NoError(t, err)
+	keysets := make(map[string]wireguard.KeySet)
+	for _, host := range config.Hosts {
+		keySet, err := wireguard.GenerateKeySet()
+		require.NoError(t, err, "failed to generate keyset for host %s", host.Name)
+		keysets[host.Name] = keySet
+	}
 
-	bastion := result.Hosts["bastion-1"]
-	assert.Equal(t, []string{
-		"iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE",
-		"iptables -A FORWARD -i %i -s 172.20.0.2/32 -d 10.10.0.0/16 -j ACCEPT",
-		"iptables -A FORWARD -i eth0 -s 10.10.0.0/16 -d 172.20.0.2/32 -j ACCEPT",
-		"iptables -A FORWARD -i %i -j DROP",
-		"iptables -A FORWARD -o %i -j DROP",
-	}, bastion.Interface.PostUp)
-	assert.Equal(t, []string{
-		"iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE",
-		"iptables -D FORWARD -i %i -s 172.20.0.2/32 -d 10.10.0.0/16 -j ACCEPT",
-		"iptables -D FORWARD -i eth0 -s 10.10.0.0/16 -d 172.20.0.2/32 -j ACCEPT",
-		"iptables -D FORWARD -i %i -j DROP",
-		"iptables -D FORWARD -o %i -j DROP",
-	}, bastion.Interface.PostDown)
+	presharedKeys := make(map[string]string)
+	for _, route := range config.Routes {
+		pairKey := GetPairKey(route.From, route.To)
+		if _, exists := presharedKeys[pairKey]; exists {
+			continue
+		}
+		psk, err := wireguard.GeneratePresharedKey()
+		require.NoError(t, err, "failed to generate preshared key for pair %s", pairKey)
+		presharedKeys[pairKey] = base64.StdEncoding.EncodeToString(psk)
+	}
+
+	return MapToWireguard(config, keysets, presharedKeys)
 }
 
 func TestMapToWireguardDuplicateHostReturnsError(t *testing.T) {
@@ -269,7 +498,8 @@ func TestMapToWireguardMissingPresharedKeyReturnsError(t *testing.T) {
 		Name: "missing-preshared-key-mesh",
 		Hosts: []internal.Host{
 			{
-				Name: "bastion-1",
+				Name:            "bastion-1",
+				EgressInterface: "eth0",
 				Interface: internal.HostInterface{
 					Address: "172.20.0.1/32",
 				},
