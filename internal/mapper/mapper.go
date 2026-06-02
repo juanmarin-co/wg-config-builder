@@ -214,6 +214,17 @@ func addForwardingRules(
 		}
 	}
 
+	// Make the per-route allow rules restrictive even when the host's default
+	// FORWARD policy is ACCEPT, without changing the global chain policy.
+	postUp = append(postUp,
+		"iptables -A FORWARD -i %i -j DROP",
+		"iptables -A FORWARD -o %i -j DROP",
+	)
+	postDown = append(postDown,
+		"iptables -D FORWARD -i %i -j DROP",
+		"iptables -D FORWARD -o %i -j DROP",
+	)
+
 	hostConfig := hosts[host.Name]
 	hostConfig.Interface.PostUp = postUp
 	hostConfig.Interface.PostDown = postDown

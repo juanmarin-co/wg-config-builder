@@ -73,6 +73,66 @@ func TestMapToWireguard(t *testing.T) {
 	}
 }
 
+func TestMapToWireguardAddsTerminalForwardDropsForEgressHost(t *testing.T) {
+	config := internal.Configuration{
+		Name: "restrictive-forwarding-mesh",
+		Hosts: []internal.Host{
+			{
+				Name:            "bastion-1",
+				Endpoint:        "10.0.0.1:51820",
+				EgressInterface: "eth0",
+				Interface: internal.HostInterface{
+					Address: "172.20.0.1/32",
+				},
+			},
+			{
+				Name: "client-1",
+				Interface: internal.HostInterface{
+					Address: "172.20.0.2/32",
+				},
+			},
+		},
+		Routes: []internal.Route{
+			{
+				From:       "client-1",
+				To:         "bastion-1",
+				AllowedIPs: []string{"10.10.0.0/16"},
+			},
+		},
+	}
+
+	bastionKeySet, err := wireguard.GenerateKeySet()
+	require.NoError(t, err)
+	clientKeySet, err := wireguard.GenerateKeySet()
+	require.NoError(t, err)
+
+	result, err := MapToWireguard(
+		config,
+		map[string]wireguard.KeySet{
+			"bastion-1": bastionKeySet,
+			"client-1":  clientKeySet,
+		},
+		map[string]string{GetPairKey("client-1", "bastion-1"): "test-preshared-key"},
+	)
+	require.NoError(t, err)
+
+	bastion := result.Hosts["bastion-1"]
+	assert.Equal(t, []string{
+		"iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE",
+		"iptables -A FORWARD -i %i -s 172.20.0.2/32 -d 10.10.0.0/16 -j ACCEPT",
+		"iptables -A FORWARD -i eth0 -s 10.10.0.0/16 -d 172.20.0.2/32 -j ACCEPT",
+		"iptables -A FORWARD -i %i -j DROP",
+		"iptables -A FORWARD -o %i -j DROP",
+	}, bastion.Interface.PostUp)
+	assert.Equal(t, []string{
+		"iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE",
+		"iptables -D FORWARD -i %i -s 172.20.0.2/32 -d 10.10.0.0/16 -j ACCEPT",
+		"iptables -D FORWARD -i eth0 -s 10.10.0.0/16 -d 172.20.0.2/32 -j ACCEPT",
+		"iptables -D FORWARD -i %i -j DROP",
+		"iptables -D FORWARD -o %i -j DROP",
+	}, bastion.Interface.PostDown)
+}
+
 func TestMapToWireguardDuplicateHostReturnsError(t *testing.T) {
 	config := internal.Configuration{
 		Name: "duplicate-host-mesh",
