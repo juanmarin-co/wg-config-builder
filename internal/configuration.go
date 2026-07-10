@@ -25,6 +25,7 @@ type Host struct {
 
 type HostInterface struct {
 	Address string   `json:"address" yaml:"address"`
+	MTU     uint16   `json:"mtu" yaml:"mtu"`
 	DNS     []string `json:"dns" yaml:"dns"`
 }
 

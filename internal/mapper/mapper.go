@@ -59,6 +59,7 @@ func MapToWireguard(
 func buildInterface(host internal.Host, keyset wireguard.KeySet) (wireguard.HostInterfaceConfiguration, error) {
 	interfaceConfig := wireguard.HostInterfaceConfiguration{
 		Address:    host.Interface.Address,
+		MTU:        host.Interface.MTU,
 		PrivateKey: base64.StdEncoding.EncodeToString(keyset.PrivateKey),
 	}
 

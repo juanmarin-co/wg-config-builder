@@ -34,6 +34,10 @@ func renderHostConfig(hostName string, config HostConfiguration) (string, error)
 	sb.WriteString("[Interface]\n")
 	sb.WriteString(fmt.Sprintf("Address = %s\n", config.Interface.Address))
 
+	if config.Interface.MTU > 0 {
+		sb.WriteString(fmt.Sprintf("MTU = %d\n", config.Interface.MTU))
+	}
+
 	if config.Interface.ListenPort > 0 {
 		sb.WriteString(fmt.Sprintf("ListenPort = %d\n", config.Interface.ListenPort))
 	}

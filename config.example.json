@@ -6,13 +6,15 @@
       "endpoint": "142.251.35.238:51820",
       "egressInterface": "ens4",
       "interface": {
-        "address": "172.24.0.1/32"
+        "address": "172.24.0.1/32",
+        "mtu": 1380
       }
     },
     {
       "name": "simple",
       "interface": {
         "address": "172.24.0.2/32",
+        "mtu": 1380,
         "dns": ["1.1.1.1", "1.0.0.1"]
       }
     },
@@ -20,6 +22,7 @@
       "name": "all",
       "interface": {
         "address": "172.24.0.3/32",
+        "mtu": 1380,
         "dns": ["1.1.1.1", "1.0.0.1"]
       }
     }

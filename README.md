@@ -46,11 +46,13 @@ hosts:
     egressInterface: eth0
     interface:
       address: 10.200.0.1/32
+      mtu: 1380
 
   # Your laptop
   - name: laptop
     interface:
       address: 10.200.0.10/32
+      mtu: 1380
       dns:
         - 8.8.8.8
 
@@ -118,6 +120,7 @@ The tool automatically creates the peer relationship on both sides:
   egressInterface: eth0             # Interface used for transit forwarding
   interface:
     address: 10.200.0.1/32          # WireGuard tunnel IP (/32 for IPv4, /128 for IPv6)
+    mtu: 1380                        # Optional explicit interface MTU
 ```
 
 **Client** (connects to gateways):
@@ -125,9 +128,12 @@ The tool automatically creates the peer relationship on both sides:
 - name: client
   interface:
     address: 10.200.0.10/32         # WireGuard tunnel IP
+    mtu: 1380                       # Optional explicit interface MTU
     dns:                            # Optional DNS servers
       - 8.8.8.8
 ```
+
+When `mtu` is omitted, `wg-quick` selects it automatically on each host. Set it explicitly when every peer must use an MTU supported by the smallest underlay path.
 
 ### Route Fields
 

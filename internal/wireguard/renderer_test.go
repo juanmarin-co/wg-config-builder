@@ -5,6 +5,27 @@ import (
 	"testing"
 )
 
+func TestRenderIncludesConfiguredInterfaceMTU(t *testing.T) {
+	result, err := Render(Configuration{
+		Hosts: map[string]HostConfiguration{
+			"client-1": {
+				Interface: HostInterfaceConfiguration{
+					Address:    "172.20.0.2/32",
+					MTU:        1380,
+					PrivateKey: "test-private-key",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Render returned error: %v", err)
+	}
+
+	if !strings.Contains(result.Hosts["client-1"], "MTU = 1380\n") {
+		t.Fatalf("rendered config missing configured MTU:\n%s", result.Hosts["client-1"])
+	}
+}
+
 func TestRenderHostConfigSortsPeersByName(t *testing.T) {
 	config := HostConfiguration{
 		Interface: HostInterfaceConfiguration{

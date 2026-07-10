@@ -11,6 +11,7 @@ type HostConfiguration struct {
 
 type HostInterfaceConfiguration struct {
 	Address    string   `yaml:"address"`
+	MTU        uint16   `yaml:"mtu"`
 	ListenPort uint16   `yaml:"listenPort"`
 	DNS        []string `yaml:"dns"`
 	PrivateKey string   `yaml:"privateKey"`

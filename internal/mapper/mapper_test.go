@@ -73,6 +73,16 @@ func TestMapToWireguard(t *testing.T) {
 	}
 }
 
+func TestMapToWireguardPreservesConfiguredInterfaceMTU(t *testing.T) {
+	config := baseClientBastionConfig()
+	config.Hosts[1].Interface.MTU = 1380
+
+	result, err := mapToWireguardForTest(t, config)
+	require.NoError(t, err)
+
+	assert.Equal(t, uint16(1380), result.Hosts["client-1"].Interface.MTU)
+}
+
 func TestMapToWireguardExampleJSONConfigUsesMapperSchema(t *testing.T) {
 	config, err := internal.LoadConfiguration(filepath.Join("..", "..", "config.example.json"))
 	require.NoError(t, err)
